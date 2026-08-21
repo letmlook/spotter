@@ -31,10 +31,10 @@ func (a *Agent) StartUDP(ctx context.Context) error {
 		}
 	}
 	if err := conn.SetReadBuffer(64 * 1024); err != nil {
-		a.log.Warn("set read buffer", slog.String("err", err.Error()))
+		a.logger.Warn("set read buffer", slog.String("err", err.Error()))
 	}
 
-	a.log.Info("udp listening", slog.String("addr", a.cfg.MulticastGroup))
+	a.logger.Info("udp listening", slog.String("addr", a.cfg.MulticastGroup))
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -64,12 +64,12 @@ func (a *Agent) udpReadLoop(ctx context.Context, conn *net.UDPConn) {
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
-			a.log.Debug("udp read", slog.String("err", err.Error()))
+			a.logger.Debug("udp read", slog.String("err", err.Error()))
 			continue
 		}
 		var hello protocol.HelloPacket
 		if err := json.Unmarshal(buf[:n], &hello); err != nil {
-			a.log.Debug("udp decode hello", slog.String("err", err.Error()))
+			a.logger.Debug("udp decode hello", slog.String("err", err.Error()))
 			continue
 		}
 		if hello.Type != "hello" {
@@ -87,16 +87,16 @@ func (a *Agent) replyToHELLO(src *net.UDPAddr) {
 	}
 	data, err := json.Marshal(reply)
 	if err != nil {
-		a.log.Error("marshal reply", slog.String("err", err.Error()))
+		a.logger.Error("marshal reply", slog.String("err", err.Error()))
 		return
 	}
 	conn, err := net.DialUDP("udp", nil, src)
 	if err != nil {
-		a.log.Debug("dial src", slog.String("err", err.Error()))
+		a.logger.Debug("dial src", slog.String("err", err.Error()))
 		return
 	}
 	defer conn.Close()
 	if _, err := conn.Write(data); err != nil {
-		a.log.Debug("write reply", slog.String("err", err.Error()))
+		a.logger.Debug("write reply", slog.String("err", err.Error()))
 	}
 }
