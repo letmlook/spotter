@@ -24,7 +24,7 @@ import (
 	"github.com/spotter/spotter/internal/scanner"
 )
 
-//go:embed all:ui
+//go:embed all:frontend/dist
 var uiFS embed.FS
 
 // deployUsername is the SSH user assumed when deploying via the GUI.
