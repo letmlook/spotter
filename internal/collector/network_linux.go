@@ -4,9 +4,7 @@ package collector
 
 import (
 	"net"
-	"os"
 	"sort"
-	"strings"
 
 	"github.com/spotter/spotter/internal/protocol"
 )
@@ -76,7 +74,3 @@ func firstNonLoopback() string {
 	}
 	return ""
 }
-
-// keep os import alive for future /proc reads
-var _ = os.Stderr
-var _ = strings.TrimSpace

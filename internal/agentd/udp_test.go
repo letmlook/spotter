@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +27,7 @@ func TestUDPHelloReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.SetInfoForTest(protocol.DeviceInfo{
+	a.SetInfo(protocol.DeviceInfo{
 		DeviceID: "test-uuid",
 		Basic:    protocol.BasicInfo{Hostname: "loopback-host"},
 	})
@@ -88,7 +87,6 @@ func TestUDPHelloReply(t *testing.T) {
 	if reply.Info.Basic.Hostname != "loopback-host" {
 		t.Errorf("info.basic.hostname: %q", reply.Info.Basic.Hostname)
 	}
-	_ = strings.Repeat
 }
 
 func pickFreeUDPAddr(t *testing.T) string {

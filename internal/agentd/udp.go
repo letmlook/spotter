@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
@@ -35,16 +34,9 @@ func (a *Agent) StartUDP(ctx context.Context) error {
 	}
 
 	a.logger.Info("udp listening", slog.String("addr", a.cfg.MulticastGroup))
-	var wg sync.WaitGroup
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		defer conn.Close()
 		a.udpReadLoop(ctx, conn)
-	}()
-	go func() {
-		<-ctx.Done()
-		wg.Wait()
 	}()
 	return nil
 }

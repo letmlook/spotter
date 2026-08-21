@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"time"
 
@@ -159,6 +158,3 @@ func parseDeviceID(stdout string) (string, error) {
 	}
 	return m[1], nil
 }
-
-// helper for tests / future embed
-var _ = filepath.Join

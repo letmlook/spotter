@@ -7,27 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/spotter/spotter/internal/agentd"
 	"github.com/spotter/spotter/internal/protocol"
 )
 
-type stubSource struct {
-	mu   sync.Mutex
-	info protocol.DeviceInfo
-}
-
-func (s *stubSource) Info() protocol.DeviceInfo {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.info
-}
-
 func TestHealthz(t *testing.T) {
-	src := &stubSource{info: protocol.DeviceInfo{DeviceID: "x"}}
 	a, err := agentd.New(agentd.Config{
 		DeviceID:     "x",
 		ListenAddr:   "127.0.0.1:0",
@@ -36,7 +22,7 @@ func TestHealthz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.SetInfoForTest(src.Info())
+	a.SetInfo(protocol.DeviceInfo{DeviceID: "x"})
 
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
@@ -63,7 +49,7 @@ func TestInfoEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.SetInfoForTest(want)
+	a.SetInfo(want)
 
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
@@ -83,7 +69,6 @@ func TestInfoEndpoint(t *testing.T) {
 	if got.DeviceID != "test-device" || got.Basic.Hostname != "h" {
 		t.Errorf("got %+v", got)
 	}
-	_ = time.Second
 }
 
 func TestNewValidatesConfig(t *testing.T) {

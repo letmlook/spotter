@@ -22,12 +22,10 @@ func (c *Collector) Collect(ctx context.Context) (protocol.DeviceInfo, error) {
 		SchemaVersion: protocol.SchemaVersion,
 		CollectedAt:   nowUTC(),
 		Basic:         collectBasic(),
-		// Network/Jetson collection added in Tasks 5/6:
-		// Network: collectNetwork(),
+		Network:       collectNetwork(),
 	}
-	// if j := collectJetson(ctx); j != nil {
-	// 	info.Jetson = j
-	// }
-	_ = ctx
+	if j := collectJetson(ctx); j != nil {
+		info.Jetson = j
+	}
 	return info, nil
 }

@@ -28,22 +28,10 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 	info := &protocol.JetsonInfo{}
 	found := false
 
-	// Make exec lookup hermetic to root: prepend root-scoped bin dirs onto
-	// PATH so probeJetsonRelease finds a root-scoped jetson_release instead
-	// of one on the host. Linux-only (_linux.go); PATH separator is ":".
-	var extraParts []string
-	if _, err := os.Stat(root + "/usr/bin"); err == nil {
-		extraParts = append(extraParts, root+"/usr/bin")
-	}
-	if _, err := os.Stat(root + "/usr/local/bin"); err == nil {
-		extraParts = append(extraParts, root+"/usr/local/bin")
-	}
-	if len(extraParts) > 0 {
-		_ = os.Setenv("PATH", strings.Join(extraParts, ":")+":"+os.Getenv("PATH"))
-	}
-
-	// Step 1: jetson_release -v
-	if j, err := probeJetsonRelease(); err == nil && j != nil {
+	// Step 1: jetson_release -v (with hermetic PATH that prepends
+	// root-scoped bin dirs so a root-scoped jetson_release wins over
+	// the host's, but without polluting the process environment).
+	if j, err := probeJetsonRelease(root); err == nil && j != nil {
 		mergeJetson(info, *j)
 		found = true
 	}
@@ -77,8 +65,28 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 	return info
 }
 
-func probeJetsonRelease() (*protocol.JetsonInfo, error) {
-	out, err := exec.Command("jetson_release", "-v").Output()
+// probeJetsonRelease runs `jetson_release -v` with a hermetic PATH so
+// that a root-scoped /usr/bin/jetson_release wins over the host's
+// without mutating the agent's process environment.
+func probeJetsonRelease(root string) (*protocol.JetsonInfo, error) {
+	// PATH separator is ':' on Linux. We prepend root-scoped bin dirs
+	// in front of the inherited PATH so the probe resolves a
+	// root-scoped binary first.
+	var extraParts []string
+	if _, err := os.Stat(root + "/usr/bin"); err == nil {
+		extraParts = append(extraParts, root+"/usr/bin")
+	}
+	if _, err := os.Stat(root + "/usr/local/bin"); err == nil {
+		extraParts = append(extraParts, root+"/usr/local/bin")
+	}
+	cmd := exec.Command("jetson_release", "-v")
+	if len(extraParts) > 0 {
+		extraPath := strings.Join(extraParts, ":") + ":" + os.Getenv("PATH")
+		cmd.Env = overrideEnvPath(os.Environ(), extraPath)
+	} else {
+		cmd.Env = os.Environ()
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +120,25 @@ func probeJetsonRelease() (*protocol.JetsonInfo, error) {
 		}
 	}
 	return j, nil
+}
+
+// overrideEnvPath returns a copy of env with PATH replaced by newPath.
+// If env has no PATH entry, appends one.
+func overrideEnvPath(env []string, newPath string) []string {
+	out := make([]string, 0, len(env))
+	replaced := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			out = append(out, "PATH="+newPath)
+			replaced = true
+			continue
+		}
+		out = append(out, e)
+	}
+	if !replaced {
+		out = append(out, "PATH="+newPath)
+	}
+	return out
 }
 
 func readFile(path string) string {

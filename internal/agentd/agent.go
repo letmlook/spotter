@@ -65,11 +65,6 @@ func (a *Agent) Info() protocol.DeviceInfo {
 	return a.info
 }
 
-// SetInfoForTest sets the info from a test (avoid lock-exporting).
-func (a *Agent) SetInfoForTest(info protocol.DeviceInfo) {
-	a.SetInfo(info)
-}
-
 type missingFieldError struct{ field string }
 
 func (e *missingFieldError) Error() string { return "agentd: missing field: " + e.field }
