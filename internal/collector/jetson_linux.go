@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -25,6 +26,20 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 	info := &protocol.JetsonInfo{}
 	found := false
 
+	// Make exec lookup hermetic to root: prepend root-scoped bin dirs onto
+	// PATH so probeJetsonRelease finds a root-scoped jetson_release instead
+	// of one on the host. Linux-only (_linux.go); PATH separator is ":".
+	var extraParts []string
+	if _, err := os.Stat(root + "/usr/bin"); err == nil {
+		extraParts = append(extraParts, root+"/usr/bin")
+	}
+	if _, err := os.Stat(root + "/usr/local/bin"); err == nil {
+		extraParts = append(extraParts, root+"/usr/local/bin")
+	}
+	if len(extraParts) > 0 {
+		_ = os.Setenv("PATH", strings.Join(extraParts, ":")+":"+os.Getenv("PATH"))
+	}
+
 	// Step 1: jetson_release -v
 	if j, err := probeJetsonRelease(); err == nil && j != nil {
 		mergeJetson(info, *j)
@@ -47,8 +62,8 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 		found = true
 	}
 
-	// Step 4: CUDA/cuDNN/TensorRT from /usr/local
-	if c := readFile("/usr/local/cuda/version.json"); c != "" {
+	// Step 4: CUDA/cuDNN/TensorRT from root-scoped /usr/local/cuda
+	if c := readFile(root + "/usr/local/cuda/version.json"); c != "" {
 		// best-effort; just mark found=true if file exists
 		found = true
 		_ = c
@@ -109,7 +124,7 @@ func readFile(path string) string {
 			return ""
 		}
 	}
-	return strings.TrimRight(string(b), "\n")
+	return string(bytes.TrimRight(b, "\x00\n"))
 }
 
 // parseL4T parses the nv_tegra_release header line, e.g.
