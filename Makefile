@@ -16,7 +16,7 @@ agent-linux-arm64:
 		-o bin/spotterd-linux-arm64 ./cmd/agent
 
 client:
-	$(GO) build $(GOFLAGS) -o bin/spotter-client ./cmd/client
+	$(GO) build $(GOFLAGS) -o bin/spotter-client .
 
 clean:
 	rm -rf bin/

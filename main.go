@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -27,12 +28,22 @@ func main() {
 		panic(err)
 	}
 	dataDir := filepath.Join(appData, "Spotter")
-	_ = os.MkdirAll(dataDir, 0755)
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		logger.Error("create data directory", slog.String("err", err.Error()))
+	}
 	logPath := filepath.Join(dataDir, "logs")
-	_ = os.MkdirAll(logPath, 0755)
+	if err := os.MkdirAll(logPath, 0755); err != nil {
+		logger.Error("create log directory", slog.String("err", err.Error()))
+	}
 
-	logFile, _ := os.OpenFile(filepath.Join(logPath, "spotter.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	logger := slog.New(slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logFile, err := os.OpenFile(filepath.Join(logPath, "spotter.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.Error("open log file", slog.String("err", err.Error()))
+	} else {
+		defer logFile.Close()
+		logger = slog.New(slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	}
 
 	reg, err := registry.Open(filepath.Join(dataDir, "devices.json"))
 	if err != nil {
@@ -49,6 +60,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: uiFS,
 		},
+		OnStartup: app.OnStartup,
 		Bind: []interface{}{
 			app,
 		},
@@ -64,17 +76,24 @@ type App struct {
 	reg     *registry.Registry
 	logger  *slog.Logger
 	scanner *scanner.Scanner
+	ctx     context.Context // injected via OnStartup
+}
+
+// OnStartup is called by Wails; capture ctx for EventsEmit use.
+func (a *App) OnStartup(ctx context.Context) {
+	a.ctx = ctx
 }
 
 // NewApp constructs the App, scanner, and event wiring. Scanner
 // events are forwarded as Wails runtime events so the frontend can
 // listen with EventsOn.
 func NewApp(reg *registry.Registry, logger *slog.Logger) *App {
-	sc := scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
+	app := &App{reg: reg, logger: logger}
+	app.scanner = scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
 		logger.Info("scanner event", slog.String("tag", e.Tag()))
-		wailsruntime.EventsEmit(nil, e.Tag())
+		wailsruntime.EventsEmit(app.ctx, e.Tag())
 	}))
-	return &App{reg: reg, logger: logger, scanner: sc}
+	return app
 }
 
 // StartScanner begins the poll + mcast loops. The frontend calls this
@@ -90,7 +109,7 @@ func (a *App) ListDevices() []registry.Entry {
 
 // ScanSubnet triggers a manual subnet scan.
 func (a *App) ScanSubnet(ctx context.Context, cidr string) error {
-	return a.scanner.ScanSubnet(ctx, cidr, 30*1_000_000_000) // 30s
+	return a.scanner.ScanSubnet(ctx, cidr, 30*time.Second)
 }
 
 // RefreshNow forces an immediate poll cycle.
