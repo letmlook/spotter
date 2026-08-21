@@ -1,6 +1,6 @@
 module github.com/spotter/spotter
 
-go 1.25.0
+go 1.22.0
 
 require (
 	github.com/BurntSushi/toml v1.3.1
