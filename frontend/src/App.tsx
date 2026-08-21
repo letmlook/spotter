@@ -1,6 +1,7 @@
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import DetailPanel from './components/DetailPanel';
+import StatusBar from './components/StatusBar';
 import { useWailsEvents } from './hooks/useWailsEvents';
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
         <Sidebar />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#141414' }}>
           <DetailPanel />
+          <StatusBar />
         </main>
       </div>
     </div>
