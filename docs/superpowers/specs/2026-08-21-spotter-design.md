@@ -124,10 +124,19 @@ device_discovery/
 │ ├── uninstall.sh            # 设备端卸载脚本
 │ ├── cleanup.sh              # 部署失败回滚脚本
 │ └── spotterd.service        # systemd unit 文件
-├── ui/                       # Wails 前端
-│ ├── index.html
-│ ├── app.js
-│ └── styles.css
+├── frontend/                 # Wails 前端 (Vite + React + TS)
+│ ├── index.html              # Vite 入口 HTML
+│ ├── package.json            # npm 依赖与 scripts
+│ ├── vite.config.ts          # Vite 配置
+│ ├── tsconfig.json           # TypeScript 配置
+│ └── src/                    # 应用源码
+│   ├── main.tsx              # React 入口
+│   ├── App.tsx               # 根组件
+│   ├── styles.css            # 全局样式
+│   ├── components/           # UI 组件
+│   ├── hooks/                # 自定义 hooks
+│   ├── state/                # 状态管理（Context）
+│   └── utils/                # 工具函数
 ├── docs/
 │ └── superpowers/
 │ └── specs/
@@ -597,7 +606,7 @@ WantedBy=multi-user.target
 2. **设备端基础**：`collector` + `agentd` + `cmd/agent` + `scripts/install.sh` + `scripts/spotterd.service`
 3. **客户端基础**：`registry` + `deployer` + `cmd/client` 最小骨架（Wails 占位）
 4. **scanner 三路发现**：`scanner/poll.go` + `scanner/mcast.go` + `scanner/subnet.go` + `scanner/merge.go`
-5. **Wails 前端 UI**：`ui/`
+5. **Wails 前端 UI**：`frontend/` (Vite + React + TS)
 6. **集成测试**：dockertest deployer 端到端
 7. **手动验收**：真机 Jetson
 
@@ -618,7 +627,20 @@ device_discovery/
 │ ├── deployer/{deploy.go,uninstall.go,deploy_test.go}
 │ └── scanner/{poll.go,mcast.go,subnet.go,merge.go,*_test.go}
 ├── scripts/{install.sh,uninstall.sh,cleanup.sh,spotterd.service}
-├── ui/{index.html,app.js,styles.css}
+├── ui/{index.html,app.js,styles.css}  ← 已迁移至 frontend/ (Vite + React + TS)
+├── frontend/                 # Vite 项目根
+│ ├── index.html              # Vite 入口 HTML
+│ ├── package.json            # npm 依赖与 scripts
+│ ├── vite.config.ts          # Vite 配置
+│ ├── tsconfig.json           # TypeScript 配置
+│ └── src/                    # 应用源码
+│   ├── main.tsx              # React 入口
+│   ├── App.tsx               # 根组件
+│   ├── styles.css            # 全局样式
+│   ├── components/           # UI 组件
+│   ├── hooks/                # 自定义 hooks
+│   ├── state/                # 状态管理（Context）
+│   └── utils/                # 工具函数
 ├── docs/superpowers/specs/2026-08-21-spotter-design.md
 ├── go.mod, go.sum, wails.json, README.md
 ```

@@ -4,7 +4,7 @@ LAN device discovery for Linux ARM64 targets (Jetson, Ubuntu Server, Debian).
 
 - **Device side**: a single-file Go binary `spotterd` (systemd unit) at `cmd/agent/`.
 - **Client side**: a Windows GUI (`spotter-client`) built with Wails; entrypoint
-  lives at the project root and embeds the UI from `ui/`.
+  lives at the project root and embeds the UI from `frontend/` (Vite + React + TS).
 
 The client discovers devices via three sources, all of which feed a single
 merge pipeline:
@@ -26,6 +26,11 @@ make agent-linux-arm64
 
 # Windows client (builds main.go at the project root)
 make client
+
+# The Wails build pulls frontend deps and bundles them. To work on the UI
+# in isolation, install deps and build the Vite project:
+cd frontend && npm install
+npm run build
 
 # Or, equivalently, use the Wails CLI directly:
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
