@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,6 +19,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/spotter/spotter/internal/deployer"
+	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 	"github.com/spotter/spotter/internal/scanner"
 )
@@ -25,8 +28,8 @@ import (
 var uiFS embed.FS
 
 // deployUsername is the SSH user assumed when deploying via the GUI.
-// MVP: hardcoded "root" — v1.x may prompt per-device.
-const deployUsername = "root"
+// MVP: hardcoded — v1.x may prompt per-device.
+const deployUsername = "fitow"
 
 // listenPort is the device-side HTTP port the client expects after a
 // successful install.sh (the install script writes agent.toml with
@@ -106,7 +109,7 @@ func NewApp(reg *registry.Registry, logger *slog.Logger) *App {
 	app := &App{reg: reg, logger: logger, ctx: context.Background()}
 	app.scanner = scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
 		logger.Info("scanner event", slog.String("tag", e.Tag()))
-		wailsruntime.EventsEmit(app.ctx, e.Tag())
+		wailsruntime.EventsEmit(app.ctx, e.Tag(), e)
 	}))
 	return app
 }
@@ -125,22 +128,32 @@ func (a *App) ListDevices() []registry.Entry {
 }
 
 // ScanSubnet triggers a manual subnet scan.
-func (a *App) ScanSubnet(ctx context.Context, cidr string) error {
+func (a *App) ScanSubnet(cidr string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	return a.scanner.ScanSubnet(ctx, cidr, 30*time.Second)
 }
 
 // RefreshNow forces an immediate poll cycle.
-func (a *App) RefreshNow(ctx context.Context) error {
+func (a *App) RefreshNow() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	return a.scanner.PollOnce(ctx)
 }
 
 // DeployDevice SSH-deploys spotterd to the given IP and registers the
 // new device locally so the GUI begins polling it. Returns the
 // generated DeviceID.
-func (a *App) DeployDevice(ctx context.Context, ip string, sshPort int, password string) (string, error) {
+//
+// Wails does not inject ctx into bound methods, so we accept it as a
+// regular string param (empty = no timeout override) and internally
+// derive a context.Background() with a 60s deploy timeout.
+func (a *App) DeployDevice(ip string, sshPort int, password string) (string, error) {
 	if sshPort == 0 {
 		sshPort = 22
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	dep := &deployer.Deployer{}
 	res, err := dep.Deploy(ctx, deployer.DeployRequest{
 		IP:       ip,
@@ -165,19 +178,138 @@ func (a *App) DeployDevice(ctx context.Context, ip string, sshPort int, password
 	return res.DeviceID, nil
 }
 
+// ProbeByIP fetches /api/v1/info from ip:port and, if the device is
+// not already registered, adds it to the registry. Returns the new
+// entry. Useful for known-IP setups where UDP multicast is blocked.
+func (a *App) ProbeByIP(ip string, port int, username string) (registry.Entry, error) {
+	if port == 0 {
+		port = listenPort
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("http://%s:%d/api/v1/info", ip, port)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return registry.Entry{}, err
+	}
+	resp, err := a.scanner.HTTPClient().Do(req)
+	if err != nil {
+		return registry.Entry{}, fmt.Errorf("probe: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return registry.Entry{}, fmt.Errorf("probe: HTTP %d", resp.StatusCode)
+	}
+	var info protocol.DeviceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return registry.Entry{}, fmt.Errorf("decode: %w", err)
+	}
+	if info.DeviceID == "" {
+		return registry.Entry{}, fmt.Errorf("probe: response missing device_id")
+	}
+	// Already registered? Just refresh.
+	if existing, ok := a.reg.Get(info.DeviceID); ok {
+		a.reg.Update(info.DeviceID, func(e *registry.Entry) {
+			e.IP = ip
+			e.Port = port
+			e.LastSeenAt = time.Now().UTC().Format(time.RFC3339)
+			e.LastSource = "manual-probe"
+			e.Online = true
+			e.LastInfo = &info
+		})
+		return existing, nil
+	}
+	e := registry.Entry{
+		DeviceID:   info.DeviceID,
+		IP:         ip,
+		Port:       port,
+		Username:   username,
+		DeployedAt: time.Now().UTC().Format(time.RFC3339),
+		LastSeenAt: time.Now().UTC().Format(time.RFC3339),
+		LastSource: "manual-probe",
+		Online:     true,
+		LastInfo:   &info,
+	}
+	if err := a.reg.Add(e); err != nil {
+		return registry.Entry{}, fmt.Errorf("add: %w", err)
+	}
+	return e, nil
+}
+
+// AcceptUnknownDevice adds a previously-unknown device (discovered
+// via UDP multicast HELLO or subnet scan) to the local registry, so
+// subsequent polls start tracking it. Returns the new entry.
+func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username string) (registry.Entry, error) {
+	if deviceID == "" {
+		return registry.Entry{}, fmt.Errorf("deviceID required")
+	}
+	if port == 0 {
+		port = listenPort
+	}
+	if _, ok := a.reg.Get(deviceID); ok {
+		return registry.Entry{}, fmt.Errorf("device %q already in registry", deviceID)
+	}
+	e := registry.Entry{
+		DeviceID:   deviceID,
+		IP:         ip,
+		Port:       port,
+		Username:   username,
+		DeployedAt: time.Now().UTC().Format(time.RFC3339),
+		LastSource: "accept",
+		Online:     false,
+	}
+	if err := a.reg.Add(e); err != nil {
+		return registry.Entry{}, fmt.Errorf("add to registry: %w", err)
+	}
+	// Best-effort immediate poll so the row shows up populated quickly.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = a.scanner.PollOnce(ctx)
+	}()
+	return e, nil
+}
+
+// ClearRegistry removes every entry from the local registry. Used to
+// reset the GUI without touching the remote devices (use Uninstall for
+// that). Returns the number of entries removed.
+func (a *App) ClearRegistry() (int, error) {
+	entries := a.reg.List()
+	for _, e := range entries {
+		if err := a.reg.Remove(e.DeviceID); err != nil {
+			return 0, fmt.Errorf("remove %s: %w", e.DeviceID, err)
+		}
+	}
+	a.logger.Info("registry cleared", slog.Int("count", len(entries)))
+	return len(entries), nil
+}
+
 // UninstallDevice SSH-runs uninstall.sh on the registered device and
-// removes its registry entry. Password is re-supplied by the user per
-// spec §5.3 (SSH credentials are never persisted).
-func (a *App) UninstallDevice(ctx context.Context, deviceID string, password string) error {
+// removes its registry entry. Password and username are re-supplied by
+// the user per spec §5.3 (SSH credentials are never persisted). If
+// username is empty, falls back to whatever the registry stored.
+func (a *App) UninstallDevice(deviceID string, username string, password string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	entry, ok := a.reg.Get(deviceID)
 	if !ok {
 		return fmt.Errorf("device %q not found in registry", deviceID)
+	}
+	if username == "" {
+		username = entry.Username
+	}
+	if username == "" {
+		return fmt.Errorf("device %q has no SSH username recorded; supply one", deviceID)
+	}
+	// Persist the supplied username for future uninstalls.
+	if entry.Username != username {
+		_ = a.reg.Update(deviceID, func(e *registry.Entry) { e.Username = username })
 	}
 	dep := &deployer.Deployer{}
 	if err := dep.Uninstall(ctx, deployer.DeployRequest{
 		IP:       entry.IP,
 		SSHPort:  22,
-		Username: entry.Username,
+		Username: username,
 		Password: password,
 	}); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
