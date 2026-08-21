@@ -4,6 +4,7 @@
 package scanner
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -93,3 +94,14 @@ func (s *Scanner) emit(e Event) {
 
 // timeNowUTC returns the current UTC time in RFC3339 format.
 func timeNowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
+
+// Start runs all discovery loops until ctx is cancelled.
+func (s *Scanner) Start(ctx context.Context) {
+	go s.pollLoop(ctx)
+	go s.mcastLoop(ctx)
+}
+
+// MergeForTest exposes the merge pipeline for tests.
+func (s *Scanner) MergeForTest(src, ip string, port int, info protocol.DeviceInfo) {
+	s.mergeInfo(src, ip, port, info)
+}
