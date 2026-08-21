@@ -202,3 +202,60 @@ func pickFreeUDPAddr(t *testing.T) string {
 	conn.Close()
 	return addr.String()
 }
+
+func TestSubnetScanFindsDevice(t *testing.T) {
+	info := protocol.DeviceInfo{
+		DeviceID: "scanned-device",
+		Basic:    protocol.BasicInfo{Hostname: "scanme"},
+	}
+	// The scanner probes port 9999, so the server must listen there.
+	ln, err := net.Listen("tcp", "127.0.0.1:9999")
+	if err != nil {
+		t.Skipf("port 9999 unavailable: %v", err)
+	}
+	srv := &httptest.Server{
+		Listener: ln,
+		Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/healthz":
+				w.Write([]byte("ok"))
+			case "/api/v1/info":
+				_ = json.NewEncoder(w).Encode(info)
+			default:
+				http.NotFound(w, r)
+			}
+		})},
+	}
+	srv.Start()
+	defer srv.Close()
+
+	host := ln.Addr().(*net.TCPAddr).IP.String()
+
+	dir := t.TempDir()
+	reg, _ := registry.Open(filepath.Join(dir, "devices.json"))
+	var unknownSeen bool
+	sc := scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
+		if _, ok := e.(scanner.EventUnknownDeviceDiscovered); ok {
+			unknownSeen = true
+		}
+	}))
+
+	// Scan /32 of the host's IP.
+	cidr := host + "/32"
+	if err := sc.ScanSubnet(context.Background(), cidr, 2*time.Second); err != nil {
+		t.Fatalf("ScanSubnet: %v", err)
+	}
+	if !unknownSeen {
+		t.Errorf("expected unknown-device event for scanned host")
+	}
+}
+
+func TestSubnetScanRejectsLargeRange(t *testing.T) {
+	dir := t.TempDir()
+	reg, _ := registry.Open(filepath.Join(dir, "devices.json"))
+	sc := scanner.New(reg)
+	err := sc.ScanSubnet(context.Background(), "10.0.0.0/8", 1*time.Second)
+	if err == nil {
+		t.Error("expected error for range >4096 IPs")
+	}
+}
