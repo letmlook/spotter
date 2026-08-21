@@ -1,4 +1,9 @@
 import { MinusOutlined, BorderOutlined, CloseOutlined } from '@ant-design/icons';
+import {
+  WindowMinimise,
+  WindowToggleMaximise,
+  Quit,
+} from '../../wailsjs/runtime/runtime';
 import styles from './TitleBar.module.css';
 
 export default function TitleBar() {
@@ -10,9 +15,19 @@ export default function TitleBar() {
       </div>
       <div className={styles.middle} />
       <div className={styles.right}>
-        <button className={styles.btn} aria-label="minimise"><MinusOutlined /></button>
-        <button className={styles.btn} aria-label="toggle maximise"><BorderOutlined /></button>
-        <button className={`${styles.btn} ${styles.close}`} aria-label="close"><CloseOutlined /></button>
+        <button className={styles.btn} aria-label="minimise" onClick={WindowMinimise}>
+          <MinusOutlined />
+        </button>
+        <button className={styles.btn} aria-label="toggle maximise" onClick={WindowToggleMaximise}>
+          <BorderOutlined />
+        </button>
+        <button
+          className={`${styles.btn} ${styles.close}`}
+          aria-label="close"
+          onClick={Quit}
+        >
+          <CloseOutlined />
+        </button>
       </div>
     </div>
   );
