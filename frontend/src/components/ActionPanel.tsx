@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Form, Input, Space, Alert } from 'antd';
+import { Button, Form, Input, InputNumber, Space, Alert } from 'antd';
 import { PlusOutlined, ScanOutlined, ImportOutlined, CloseOutlined } from '@ant-design/icons';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useDevices } from '../state/DeviceContext';
@@ -64,7 +64,7 @@ export default function ActionPanel() {
             <Input placeholder="10.10.9.165" autoFocus />
           </Form.Item>
           <Form.Item label="SSH port" name="port" rules={[{ required: true, type: 'number', min: 1, max: 65535 }]}>
-            <Input type="number" />
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="Username" name="username" rules={[{ required: true }]}>
             <Input />
@@ -122,7 +122,7 @@ export default function ActionPanel() {
             <Input placeholder="10.10.9.165" autoFocus />
           </Form.Item>
           <Form.Item label="HTTP port" name="port" rules={[{ required: true, type: 'number', min: 1, max: 65535 }]}>
-            <Input type="number" />
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="Username" name="username" rules={[{ required: true }]}>
             <Input />
