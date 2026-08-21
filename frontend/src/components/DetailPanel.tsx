@@ -16,7 +16,7 @@ export default function DetailPanel() {
           <>
             <h2 style={{ margin: '0 0 16px 0', color: '#fff' }}>
               {device.last_info?.basic?.hostname || device.ip}
-              <span style={{ marginLeft: 12, fontSize: 13 }} className={device.online ? 'online' : 'offline'}>
+              <span style={{ marginLeft: 12, fontSize: 13, color: device.online ? '#52c41a' : '#b71c1c' }}>
                 {device.online ? 'online' : 'offline'}
               </span>
             </h2>
