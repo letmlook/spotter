@@ -11,14 +11,13 @@ export default function DetailPanel({ onAction }: { onAction: (which: 'deploy' |
   if (!device) return <EmptyState onAction={onAction} />;
 
   const hostname = device.last_info?.basic?.hostname || device.ip;
-  const statusClass = device.online ? 'online' : 'offline';
   const statusText = device.online ? 'online' : 'offline';
 
   return (
     <div style={{ padding: 16, overflow: 'auto', height: '100%' }}>
       <h2 style={{ margin: '0 0 16px 0', color: '#fff' }}>
         {hostname}
-        <span className={statusClass} style={{ marginLeft: 12, fontSize: 13 }}>{statusText}</span>
+        <span style={{ marginLeft: 12, fontSize: 13, color: device.online ? '#52c41a' : '#b71c1c' }}>{statusText}</span>
       </h2>
       <div style={{ display: 'grid', gap: 12 }}>
         <BasicCard device={device} />
