@@ -16,6 +16,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/spotter/spotter/internal/deployer"
@@ -75,6 +76,11 @@ func main() {
 			Assets: uiFS,
 		},
 		OnStartup: app.OnStartup,
+		Windows: &windows.Options{
+			WebviewIsTransparent: false,
+			DisableWindowIcon:    true,
+		},
+		Frameless: true,
 		Bind: []interface{}{
 			app,
 		},
