@@ -27,8 +27,14 @@ type EventOffline struct{ DeviceID string }
 func (EventOffline) Tag() string { return "offline" }
 
 // EventUnknownDeviceDiscovered fires when a /info or HELLO-REPLY
-// arrives for a device not in the local registry.
-type EventUnknownDeviceDiscovered struct{ Info protocol.DeviceInfo }
+// arrives for a device not in the local registry. IP and Port carry
+// the source address (multicast HELLO source IP / subnet probe IP);
+// they may be zero if the discovery path didn't supply them.
+type EventUnknownDeviceDiscovered struct {
+	Info protocol.DeviceInfo
+	IP   string
+	Port int
+}
 
 func (EventUnknownDeviceDiscovered) Tag() string { return "unknown-device" }
 
@@ -39,6 +45,8 @@ type Options struct {
 	McastInterval  time.Duration
 	OnEvent        func(Event)
 	Logger         *slog.Logger
+	// DevicePort is the spotterd port the subnet scanner probes. Defaults to 9999.
+	DevicePort int
 	MulticastGroup string
 	ClientSenderID string
 }
@@ -58,6 +66,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MulticastGroup == "" {
 		o.MulticastGroup = "239.255.42.42:9999"
+	}
+	if o.DevicePort == 0 {
+		o.DevicePort = 9999
 	}
 	if o.ClientSenderID == "" {
 		o.ClientSenderID = "spotter-client"
@@ -105,3 +116,12 @@ func (s *Scanner) Start(ctx context.Context) {
 func (s *Scanner) MergeForTest(src, ip string, port int, info protocol.DeviceInfo) {
 	s.mergeInfo(src, ip, port, info)
 }
+
+// McastOnceForTest triggers a single mcast HELLO/REPLY cycle.
+func (s *Scanner) McastOnceForTest(ctx context.Context) {
+	s.mcastOnce(ctx)
+}
+
+// HTTPClient exposes the configured HTTP client for one-off probes
+// (e.g. manual IP add from the UI when multicast is blocked).
+func (s *Scanner) HTTPClient() *http.Client { return s.opts.HTTPClient }

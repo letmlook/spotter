@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
@@ -24,18 +23,36 @@ func (s *Scanner) mcastLoop(ctx context.Context) {
 	}
 }
 
+// mcastOnce sends a single HELLO and collects replies on one UDP
+// socket. Windows disallows having a separate ListenUDP and DialUDP
+// bound to the same LocalAddr in the same process, so we use a single
+// ListenUDP and call WriteToUDP to send the HELLO and ReadFromUDP to
+// receive replies on the same socket. The source address that devices
+// see is this socket's LocalAddr, so their unicast replies (which
+// they direct back at the HELLO source) arrive at our listener.
 func (s *Scanner) mcastOnce(ctx context.Context) {
 	addr, err := net.ResolveUDPAddr("udp", s.opts.MulticastGroup)
 	if err != nil {
 		s.opts.Logger.Debug("resolve mcast", "err", err.Error())
 		return
 	}
-	conn, err := net.DialUDP("udp", nil, addr)
+
+	// Bind to the same family as the dial target. For real multicast,
+	// zero IP works (the kernel picks the right interface). For
+	// unicast loopback tests, bind to the same IP so replies sent to
+	// (our IP, our port) reach us (Windows rejects loopback packets
+	// to 0.0.0.0 listener).
+	listenIP := net.IPv4zero
+	if !addr.IP.IsUnspecified() && !addr.IP.IsMulticast() {
+		listenIP = addr.IP
+	}
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: listenIP, Port: 0})
 	if err != nil {
-		s.opts.Logger.Debug("dial mcast", "err", err.Error())
+		s.opts.Logger.Debug("mcast listen", "err", err.Error())
 		return
 	}
 	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 	hello := protocol.HelloPacket{
 		Type:     "hello",
@@ -43,38 +60,26 @@ func (s *Scanner) mcastOnce(ctx context.Context) {
 		TS:       time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(hello)
-	if _, err := conn.Write(data); err != nil {
+	if _, err := conn.WriteToUDP(data, addr); err != nil {
+		s.opts.Logger.Debug("mcast write", "err", err.Error())
 		return
 	}
 
-	// Collect replies on a separate listening socket.
-	listenConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
-	if err != nil {
-		return
-	}
-	defer listenConn.Close()
-	_ = listenConn.SetReadDeadline(time.Now().Add(1 * time.Second))
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		buf := make([]byte, 64*1024)
-		for {
-			n, src, err := listenConn.ReadFromUDP(buf)
-			if err != nil {
-				var ne net.Error
-				if errors.As(err, &ne) && ne.Timeout() {
-					return
-				}
+	buf := make([]byte, 64*1024)
+	for {
+		n, src, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
 				return
 			}
-			var reply protocol.HelloReply
-			if json.Unmarshal(buf[:n], &reply) != nil || reply.Type != "hello_reply" {
-				continue
-			}
-			s.mergeInfo("mcast", src.IP.String(), 0, reply.Info)
+			s.opts.Logger.Debug("mcast read", "err", err.Error())
+			return
 		}
-	}()
-	wg.Wait()
+		var reply protocol.HelloReply
+		if json.Unmarshal(buf[:n], &reply) != nil || reply.Type != "hello_reply" {
+			continue
+		}
+		s.mergeInfo("mcast", src.IP.String(), s.opts.DevicePort, reply.Info)
+	}
 }

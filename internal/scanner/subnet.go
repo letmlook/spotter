@@ -84,10 +84,10 @@ func nextIP(ip net.IP) net.IP {
 	return next
 }
 
-// probeOne dials ip:9999 and, on success, fetches /api/v1/info and
-// merges the result into the registry.
+// probeOne dials ip:DevicePort and, on success, fetches /api/v1/info
+// and merges the result into the registry.
 func (s *Scanner) probeOne(ctx context.Context, ip net.IP) {
-	addr := net.JoinHostPort(ip.String(), "9999")
+	addr := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", s.opts.DevicePort))
 	d := net.Dialer{Timeout: scanTimeout}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -109,5 +109,5 @@ func (s *Scanner) probeOne(ctx context.Context, ip net.IP) {
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return
 	}
-	s.mergeInfo("subnet", ip.String(), 9999, info)
+	s.mergeInfo("subnet", ip.String(), s.opts.DevicePort, info)
 }

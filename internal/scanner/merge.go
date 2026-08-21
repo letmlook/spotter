@@ -27,5 +27,5 @@ func (s *Scanner) mergeInfo(src string, ip string, port int, info protocol.Devic
 		return
 	}
 	// Not in registry.
-	s.emit(EventUnknownDeviceDiscovered{Info: info})
+	s.emit(EventUnknownDeviceDiscovered{Info: info, IP: ip, Port: port})
 }
