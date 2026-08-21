@@ -1,5 +1,6 @@
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
+import DetailPanel from './components/DetailPanel';
 import { useWailsEvents } from './hooks/useWailsEvents';
 
 export default function App() {
@@ -9,7 +10,9 @@ export default function App() {
       <TitleBar />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <Sidebar />
-        <div style={{ flex: 1, padding: 24 }}>Main area placeholder</div>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#141414' }}>
+          <DetailPanel onAction={() => { /* placeholder until ActionPanel */ }} />
+        </main>
       </div>
     </div>
   );
