@@ -1,0 +1,35 @@
+.bar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  background: #0a0a0a;
+  border-bottom: 1px solid #303030;
+  user-select: none;
+  flex-shrink: 0;
+}
+.left {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  width: 200px;
+  -webkit-app-region: no-drag;
+}
+.logo { color: #1677ff; font-size: 18px; }
+.title { color: #fff; font-weight: 600; font-size: 14px; }
+.middle {
+  flex: 1;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+.right {
+  display: flex; align-items: center;
+  -webkit-app-region: no-drag;
+}
+.btn {
+  width: 46px; height: 40px;
+  border: 0; background: transparent;
+  color: #aaa; font-size: 14px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn:hover { background: #1f1f1f; color: #fff; }
+.close:hover { background: #c41a1a; color: #fff; }
