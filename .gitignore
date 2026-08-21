@@ -1,0 +1,20 @@
+# Build artifacts
+/bin/
+/dist/
+/build/
+*.exe
+*.test
+*.out
+
+# Wails
+/build/bin/
+/frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
