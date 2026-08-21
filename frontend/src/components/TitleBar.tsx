@@ -13,7 +13,7 @@ export default function TitleBar() {
         <span className={styles.logo}>●</span>
         <span className={styles.title}>Spotter</span>
       </div>
-      <div className={styles.middle} />
+      <div className={styles.middle} onDoubleClick={WindowToggleMaximise} />
       <div className={styles.right}>
         <button className={styles.btn} aria-label="minimise" onClick={WindowMinimise}>
           <MinusOutlined />
