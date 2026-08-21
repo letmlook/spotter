@@ -17,10 +17,10 @@ type Config struct {
 
 // Agent owns the cached DeviceInfo and exposes it to the HTTP/UDP layers.
 type Agent struct {
-	cfg     Config
-	logger  *slog.Logger
-	mu      sync.RWMutex
-	info    protocol.DeviceInfo
+	cfg    Config
+	logger *slog.Logger
+	mu     sync.RWMutex
+	info   protocol.DeviceInfo
 }
 
 // New constructs an Agent. Returns an error if cfg is missing required fields.

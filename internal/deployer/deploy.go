@@ -17,7 +17,7 @@ import (
 // device.
 type DeployRequest struct {
 	IP       string
-	SSHPort  int    // default 22
+	SSHPort  int // default 22
 	Username string
 	Password string
 }

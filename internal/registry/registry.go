@@ -17,14 +17,14 @@ import (
 // Entry is a row in devices.json. Includes last-known runtime info
 // (LastInfo) so the UI can render offline devices' last known state.
 type Entry struct {
-	DeviceID   string              `json:"device_id"`
-	IP         string              `json:"ip"`
-	Port       int                 `json:"port"`
-	Username   string              `json:"username"`
-	DeployedAt string              `json:"deployed_at"`
-	LastSeenAt string              `json:"last_seen_at"`
-	LastSource string              `json:"last_source"`
-	Online     bool                `json:"online"`
+	DeviceID   string               `json:"device_id"`
+	IP         string               `json:"ip"`
+	Port       int                  `json:"port"`
+	Username   string               `json:"username"`
+	DeployedAt string               `json:"deployed_at"`
+	LastSeenAt string               `json:"last_seen_at"`
+	LastSource string               `json:"last_source"`
+	Online     bool                 `json:"online"`
 	LastInfo   *protocol.DeviceInfo `json:"last_info,omitempty"`
 }
 
