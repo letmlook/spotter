@@ -11,9 +11,9 @@ export function useWailsEvents(onUnknownDevice?: (payload: unknown) => void) {
     const off3 = EventsOn('unknown-device', (payload: unknown) => {
       if (onUnknownDevice) onUnknownDevice(payload);
       // silent accept: assume the user wants tracked devices.
-      const data = payload as { Info?: { device_id?: string }; IP?: string; Port?: number };
+      const data = payload as { Info?: { device_id?: string; network?: { primary_ip?: string } }; IP?: string; Port?: number };
       const info = data?.Info || {};
-      const ip = data?.IP || info?.device_id ? '' : '';
+      const ip = data?.IP || info?.network?.primary_ip || '';
       const port = data?.Port || 9999;
       const deviceId = info?.device_id;
       if (!deviceId) return;
