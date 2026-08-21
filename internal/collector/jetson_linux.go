@@ -113,7 +113,8 @@ func readFile(path string) string {
 }
 
 // parseL4T parses the nv_tegra_release header line, e.g.
-//   "# R35 (release), REVISION: 5.0, GCID: 35550185 ..."
+//
+//	"# R35 (release), REVISION: 5.0, GCID: 35550185 ..."
 func parseL4T(text string) string {
 	// The version is encoded as "R<MAJOR> (release), REVISION: <MINOR>..."
 	// e.g. "R35 (release), REVISION: 5.0" -> "35.5.0"
