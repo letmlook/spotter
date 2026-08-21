@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { font-family: -apple-system, system-ui, sans-serif; margin: 0; }
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 16px; border-bottom: 1px solid #ccc;
+}
+main { display: flex; height: calc(100vh - 56px); }
+#device-list { flex: 0 0 50%; overflow: auto; border-right: 1px solid #ccc; }
+#device-list table { width: 100%; border-collapse: collapse; }
+#device-list th, #device-list td { padding: 6px 10px; border-bottom: 1px solid #eee; text-align: left; }
+#device-list tr { cursor: pointer; }
+#device-list tr:hover { background: #f5f5f5; }
+#detail { flex: 1; overflow: auto; padding: 12px; }
+.online { color: #2e7d32; font-weight: 600; }
+.offline { color: #b71c1c; }
+.toolbar button { margin-right: 8px; }
+pre { white-space: pre-wrap; }
