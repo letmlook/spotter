@@ -9,6 +9,7 @@
 # Wails
 /build/bin/
 /frontend/dist/
+/frontend/wailsjs/
 
 # IDE
 .vscode/
