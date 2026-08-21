@@ -2,6 +2,7 @@ import { Button, Popconfirm } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { ClearRegistry } from '../../wailsjs/go/main/App';
 import { useDevices } from '../state/DeviceContext';
+import ActionPanel from './ActionPanel';
 import DeviceList from './DeviceList';
 
 export default function Sidebar() {
@@ -15,6 +16,7 @@ export default function Sidebar() {
         display: 'flex', flexDirection: 'column',
       }}
     >
+      <ActionPanel />
       <div style={{ padding: '8px 12px', borderBottom: '1px solid #303030' }}>
         <Popconfirm
           title="Clear registry"

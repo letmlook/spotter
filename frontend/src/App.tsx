@@ -11,7 +11,7 @@ export default function App() {
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <Sidebar />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#141414' }}>
-          <DetailPanel onAction={() => { /* placeholder until ActionPanel */ }} />
+          <DetailPanel />
         </main>
       </div>
     </div>
