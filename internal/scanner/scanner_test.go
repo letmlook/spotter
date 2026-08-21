@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
@@ -63,5 +62,44 @@ func TestPollUpdatesOnline(t *testing.T) {
 	if !found {
 		t.Errorf("expected info-updated event, got %v", events)
 	}
-	_ = time.Second
+}
+
+func TestPollOfflineAfter3Failures(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	reg, _ := registry.Open(filepath.Join(dir, "devices.json"))
+	_ = reg.Add(registry.Entry{
+		DeviceID: "d1",
+		IP:       srv.Listener.Addr().(*net.TCPAddr).IP.String(),
+		Port:     srv.Listener.Addr().(*net.TCPAddr).Port,
+		Online:   true,
+	})
+
+	var events []string
+	sc := scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
+		events = append(events, e.Tag())
+	}))
+
+	for i := 0; i < 3; i++ {
+		if err := sc.PollOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry, _ := reg.Get("d1")
+	if entry.Online {
+		t.Error("expected offline after 3 failures")
+	}
+	found := false
+	for _, e := range events {
+		if e == "offline" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected offline event, got %v", events)
+	}
 }

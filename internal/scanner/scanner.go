@@ -71,8 +71,9 @@ func WithOnEvent(fn func(Event)) func(*Options) {
 
 // Scanner runs the three discovery loops.
 type Scanner struct {
-	reg  *registry.Registry
-	opts Options
+	reg       *registry.Registry
+	opts      Options
+	failTrack *pollFailures
 }
 
 // New creates a Scanner.
@@ -81,7 +82,7 @@ func New(reg *registry.Registry, optFns ...func(*Options)) *Scanner {
 	for _, fn := range optFns {
 		fn(&opts)
 	}
-	return &Scanner{reg: reg, opts: opts}
+	return &Scanner{reg: reg, opts: opts, failTrack: newPollFailures(3)}
 }
 
 func (s *Scanner) emit(e Event) {

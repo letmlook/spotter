@@ -42,14 +42,13 @@ func (s *Scanner) PollOnce(ctx context.Context) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	fails := newPollFailures(3)
 
 	var wg sync.WaitGroup
 	for _, e := range entries {
 		wg.Add(1)
 		go func(e registry.Entry) {
 			defer wg.Done()
-			s.pollOne(ctx, e, fails)
+			s.pollOne(ctx, e, s.failTrack)
 		}(e)
 	}
 	wg.Wait()
@@ -66,7 +65,7 @@ func (s *Scanner) pollOne(ctx context.Context, e registry.Entry, fails *pollFail
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-		// 4xx: incompatible — leave online state alone but mark
+		// 4xx: incompatible — leave online state alone
 		s.opts.Logger.Debug("poll 4xx", "device", e.DeviceID, "status", resp.StatusCode)
 		return
 	}
