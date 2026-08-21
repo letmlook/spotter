@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Dark rounded background -->
+  <rect width="256" height="256" rx="48" fill="#0a0a0a"/>
+
+  <!-- Soft gradient overlay (subtle depth) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1677ff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1677ff"/>
+      <stop offset="100%" stop-color="#69b1ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="url(#bg)"/>
+
+  <!-- Stylized "radar / signal" mark: 3 concentric arcs opening upward,
+       representing device discovery via network signal. -->
+  <!-- Largest arc (faintest) -->
+  <path d="M 56 188 A 100 100 0 0 1 200 188"
+        stroke="#1677ff" stroke-opacity="0.30" stroke-width="14"
+        stroke-linecap="round" fill="none"/>
+  <!-- Medium arc -->
+  <path d="M 86 178 A 70 70 0 0 1 170 178"
+        stroke="#1677ff" stroke-opacity="0.60" stroke-width="14"
+        stroke-linecap="round" fill="none"/>
+  <!-- Smallest arc (brightest) -->
+  <path d="M 116 168 A 40 40 0 0 1 140 168"
+        stroke="url(#signal)" stroke-width="14"
+        stroke-linecap="round" fill="none"/>
+
+  <!-- Center "device" dot -->
+  <circle cx="128" cy="170" r="14" fill="#69b1ff"/>
+  <circle cx="128" cy="170" r="6" fill="#fff"/>
+</svg>

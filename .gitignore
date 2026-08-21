@@ -2,9 +2,11 @@
 /bin/
 /dist/
 /build/
+/build/bin/
 *.exe
 *.test
 *.out
+*.syso
 
 # Wails
 /build/bin/

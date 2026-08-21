@@ -13,12 +13,15 @@
   width: 180px;
   -webkit-app-region: no-drag;
 }
-.logo { color: #1677ff; font-size: 18px; }
+.logo { width: 24px; height: 24px; display: block; }
 .title { color: #fff; font-weight: 600; font-size: 14px; }
 .middle {
   flex: 1;
   height: 100%;
-  -webkit-app-region: drag;
+  cursor: grab;
+}
+.middle:active {
+  cursor: grabbing;
 }
 .right {
   display: flex; align-items: center;
