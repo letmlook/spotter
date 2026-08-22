@@ -81,6 +81,27 @@ export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProp
             label: 'arm64 (Jetson / SBC)',
             children: (
               <>
+                <Alert
+                  type="success"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Recommended: one-shot deploy script"
+                  description={
+                    <Space direction="vertical" size={4}>
+                      <span>From your dev machine, run:</span>
+                      <CodeBlock>{`# macOS / Linux
+./scripts/deploy.sh <user> <password> <ip>
+
+# Windows PowerShell
+.\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip>`}</CodeBlock>
+                      <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
+                    </Space>
+                  }
+                />
+                <Paragraph style={{ marginTop: 8 }}>
+                  <Text strong>Or, do it by hand:</Text>
+                </Paragraph>
+
                 <Paragraph style={{ marginTop: 8 }}>
                   <Text strong>Step 1 —</Text> Build the arm64 binary:
                 </Paragraph>
@@ -112,6 +133,27 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
             label: 'amd64 (server / PC)',
             children: (
               <>
+                <Alert
+                  type="success"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Recommended: one-shot deploy script"
+                  description={
+                    <Space direction="vertical" size={4}>
+                      <span>From your dev machine, run:</span>
+                      <CodeBlock>{`# macOS / Linux
+./scripts/deploy.sh <user> <password> <ip> amd64
+
+# Windows PowerShell
+.\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip> -Arch amd64`}</CodeBlock>
+                      <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
+                    </Space>
+                  }
+                />
+                <Paragraph style={{ marginTop: 8 }}>
+                  <Text strong>Or, do it by hand:</Text>
+                </Paragraph>
+
                 <Paragraph style={{ marginTop: 8 }}>
                   <Text strong>Step 1 —</Text> Build the amd64 binary:
                 </Paragraph>

@@ -30,6 +30,8 @@
 #   │   ├── install.sh       # manual device-side installer
 #   │   ├── uninstall.sh     # manual device-side uninstaller
 #   │   ├── cleanup.sh       # best-effort cleanup after a failed install
+#   │   ├── deploy.sh        # macOS / Linux deploy helper (sshpass)
+#   │   ├── deploy.ps1       # Windows deploy helper (plink + pscp)
 #   │   └── spotterd.service # systemd unit (always needed)
 #   ├── README.md
 #   └── SHA256SUMS
@@ -165,13 +167,15 @@ stage_client_artifacts() {
 
 # ---------- packaging ----------
 copy_scripts() {
-  log "scripts + systemd unit"
+  log "scripts + deploy helpers"
   install -m 0755 "$PROJECT_ROOT/scripts/install.sh"   "$SCRIPT_OUT/install.sh"
   install -m 0755 "$PROJECT_ROOT/scripts/uninstall.sh" "$SCRIPT_OUT/uninstall.sh"
   install -m 0755 "$PROJECT_ROOT/scripts/cleanup.sh"   "$SCRIPT_OUT/cleanup.sh"
+  install -m 0755 "$PROJECT_ROOT/scripts/deploy.sh"    "$SCRIPT_OUT/deploy.sh"
+  install -m 0644 "$PROJECT_ROOT/scripts/deploy.ps1"   "$SCRIPT_OUT/deploy.ps1"
   install -m 0644 "$PROJECT_ROOT/scripts/spotterd.service" \
                   "$SCRIPT_OUT/spotterd.service"
-  ok "scripts + systemd unit"
+  ok "scripts + deploy helpers"
 }
 
 copy_readme() {

@@ -107,7 +107,33 @@ make release                        # 等价入口
 
 ## 手动安装 spotterd 到设备
 
-GUI 客户端只负责发现 / 展示信息；`spotterd` 需要在每台目标设备上手动安装。随发布包分发的 `scripts/install.sh` 提供一键安装流程：
+GUI 客户端只负责发现 / 展示信息；`spotterd` 需要在每台目标设备上手动安装。随发布包分发的 `scripts/install.sh` 是设备端安装脚本；`scripts/deploy.sh` / `scripts/deploy.ps1` 是在开发者机器上一键推送 + 执行的便捷封装。
+
+### 方式一：使用一键部署脚本（推荐）
+
+**macOS / Linux**（开发者机器）：
+
+```bash
+brew install hudochenkov/sshpass/sshpass   # 一次性安装依赖（Debian/Ubuntu: apt install sshpass；Fedora: dnf install sshpass）
+make agent-linux-arm64                    # 或 agent-linux-x64
+./scripts/deploy.sh nvidia <password> 10.0.5.23           # 默认 arm64
+./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64     # 显式 amd64
+```
+
+**Windows**（PowerShell）：
+
+```powershell
+# 安装 PuTTY（一次性）：https://putty.org  或  choco install putty
+make agent-linux-arm64
+.\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23
+.\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23 -Arch amd64
+```
+
+脚本会自动：scp `spotterd` + `spotterd.service` + `install.sh` → `ssh` 跑 `sudo bash /tmp/install.sh` → `curl /healthz` 验证。
+
+> 注意：SSH 用户必须能在目标上免密 `sudo`，否则 `install.sh` 中的 `sudo bash` 会卡在交互式密码提示上。这种情况下用方式二手动跑每一步。
+
+### 方式二：手动 scp + ssh
 
 ```bash
 # 从开发机把对应架构的二进制、systemd 单元、安装脚本推到目标设备

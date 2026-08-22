@@ -124,7 +124,39 @@ target host and merge the resulting `dist/clients/` directories.
 
 The GUI client only discovers and displays devices — `spotterd` itself
 must be installed on each target manually. The release bundle ships
-`scripts/install.sh` to make this a one-liner:
+`scripts/install.sh` for the device side and `scripts/deploy.sh` /
+`scripts/deploy.ps1` for one-shot push-and-install from the developer
+machine.
+
+### Option A: one-shot deploy script (recommended)
+
+**macOS / Linux** (developer machine):
+
+```bash
+brew install hudochenkov/sshpass/sshpass   # one-time; on Debian/Ubuntu: apt install sshpass; on Fedora: dnf install sshpass
+make agent-linux-arm64                    # or agent-linux-x64
+./scripts/deploy.sh nvidia <password> 10.0.5.23           # default arm64
+./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64     # explicit amd64
+```
+
+**Windows** (PowerShell):
+
+```powershell
+# Install PuTTY once: https://putty.org  or  choco install putty
+make agent-linux-arm64
+.\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23
+.\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23 -Arch amd64
+```
+
+The script scp's `spotterd` + `spotterd.service` + `install.sh`,
+runs `sudo bash /tmp/install.sh` over ssh, then `curl /healthz` to
+verify.
+
+> The SSH user must be passwordless-sudo on the target, otherwise the
+> `sudo bash` inside install.sh will hang on an interactive password
+> prompt. In that case fall back to option B and run each step by hand.
+
+### Option B: manual scp + ssh
 
 ```bash
 # Push the matching arch binary, systemd unit, and install script
