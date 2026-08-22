@@ -80,10 +80,14 @@ jobs:
 
       - name: Pre-build to populate go.sum
         # See go.yml for the rationale: `wails generate module` runs
-        # `go build` against main.go, and Wails sub-packages trigger
-        # module resolutions that aren't yet in go.sum on a fresh
-        # checkout. A first pass `go build` populates go.sum.
-        run: go build -o /dev/null ./cmd/agent
+        # `go build` against the root main.go (which is what imports
+        # wails/pkg/options/...). `go mod tidy` writes the missing
+        # h1 entries into go.sum; subsequent wails-driven builds
+        # then see a consistent module graph. Building ./cmd/agent
+        # wouldn't help because that subtree does not import wails;
+        # building the root package trips on the //go:embed of
+        # frontend/dist (and ties this step to npm-ci order).
+        run: go mod tidy
 
       - name: Install npm dependencies
         working-directory: frontend

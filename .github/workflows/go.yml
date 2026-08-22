@@ -75,14 +75,18 @@ jobs:
           wails version
 
       - name: Pre-build to populate go.sum
-        # `wails generate module` invokes `go build` against main.go,
-        # and Wails' sub-packages (pkg/options/*, pkg/runtime) trigger
-        # checkouts that aren't yet reflected in the freshly-cloned
-        # go.sum. A `go build` against our cmd/agent first lets Go
-        # write those missing h1 entries into go.sum so the second
-        # `go build` (inside `wails generate`) sees a consistent
-        # module graph.
-        run: go build -o /dev/null ./cmd/agent
+        # `wails generate module` invokes `go build` against the root
+        # main package (which embeds `frontend/dist` and imports all
+        # `wails/pkg/options/*` / `pkg/runtime`). A pre-`tidy` makes Go
+        # fetch the wails module sub-packages and write the missing
+        # h1 entries into go.sum so the embedded `go build` inside
+        # wails later sees a consistent module graph. Building
+        # ./cmd/agent or the root package directly won't necessarily
+        # add the same modules (cmd/agent doesn't import wails at
+        # all; root build fails the embed pattern without a real
+        # frontend/dist). `go mod tidy` is the supported path for
+        # adding missing go.sum entries without producing a binary.
+        run: go mod tidy
 
       - name: Install npm dependencies
         working-directory: frontend

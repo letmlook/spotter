@@ -132,11 +132,12 @@ jobs:
           wails version
 
       - name: Pre-build to populate go.sum
-        # See go.yml for the rationale: `wails generate module` runs
-        # `go build` against main.go, and Wails sub-packages trigger
-        # module resolutions that aren't yet in go.sum on a fresh
-        # checkout. A first pass `go build` populates go.sum.
-        run: go build -o /dev/null ./cmd/agent
+        # See go.yml for the rationale: write missing h1 entries for
+        # wails/pkg/options/* / pkg/runtime into go.sum so the embedded
+        # `go build` inside `wails generate` / `wails build` later
+        # sees a consistent module graph. `go mod tidy` is the
+        # supported path for this.
+        run: go mod tidy
 
       - name: Stage empty frontend/dist for //go:embed
         # `wails generate module` introspects Go types bound through
