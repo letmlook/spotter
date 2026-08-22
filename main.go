@@ -264,6 +264,16 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	// setting [client] enable_mdns=false in a future settings field;
 	// for v0.4 the default is on.
 	opts = append(opts, scanner.WithEnableMDNS())
+
+	tokenSet := "no"
+	if s.AuthToken != "" {
+		tokenSet = "set"
+	}
+	logger.Info("scanner config applied",
+		slog.String("multicast", s.MulticastGroup),
+		slog.Int("port", s.DevicePort),
+		slog.String("auth_token", tokenSet),
+	)
 	app.scanner = scanner.New(reg, opts...)
 	// streamFn 默认指向 scanner 实现；测试可覆盖。
 	app.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
