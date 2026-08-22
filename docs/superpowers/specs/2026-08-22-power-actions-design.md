@@ -17,7 +17,7 @@
 
 让客户端用户能通过 GUI **远程触发** spotterd 设备的 **reboot** 与 **shutdown**：
 
-- 在 device detail 面板新增两个按钮（重启、关机）。
+- 在 device detail 面板的**标题头（hostname 同行右侧）**新增两个按钮（重启、关机）。
 - 点击后 GUI 二次确认（antd Modal），确认后通过 HTTP 触发设备端 `systemctl reboot` / `systemctl poweroff`。
 - 操作完成后设备进入正常 online/offline 状态转换（不引入新状态字段）。
 
@@ -36,7 +36,7 @@
 | A | agent 端 `enable_power_actions = false`（默认）时，`POST /api/v1/reboot` 与 `/shutdown` 均返回 `403` + `{"error":"power actions disabled"}` |
 | B | agent 端 `enable_power_actions = true` 时，`POST /api/v1/reboot` 与 `/shutdown` 返回 `202` + `{"status":"scheduled","action":"reboot"}`，并实际执行 `systemctl reboot` / `systemctl poweroff` |
 | C | agent HTTP handler 异常 panic 走现有 `recoverMiddleware` 返回 500，不影响进程 |
-| D | GUI 设备 offline 时，按钮 disabled；点击 online 设备的按钮触发 antd Modal 二次确认，文案带设备 hostname；确认后发送 HTTP 请求，成功显示 `message.success` toast |
+| D | GUI 设备 offline 时，重启/关机按钮位于详情标题头右侧且 disabled；刷新按钮仍在底部 DeviceActions。点击 online 设备的电源按钮触发 antd Modal 二次确认，文案带设备 hostname；确认后发送 HTTP 请求，成功显示 `message.success` toast |
 | E | 客户端调用 `RebootDevice(deviceID)` 时，registry 找不到对应 device 或 device.offline 时返回明确错误（不静默吞错） |
 | F | systemd unit 引入 `NoNewPrivileges=true`、`ProtectSystem=strict`、`ProtectHome=true`、`PrivateTmp=true` 后，`systemctl reboot` 仍能正常工作 |
 | G | 已有测试 `make test` 全部通过；新增 agent handler 与 scanner 调用路径有单元测试覆盖 |
@@ -262,20 +262,38 @@ shutdown: (deviceID: string) => Promise<void>;
 
 调用 `RebootDevice(deviceID)` / `ShutdownDevice(deviceID)`（Wails 自动生成的绑定）。
 
-**3.4.2 `DeviceActions` 组件**
+**3.4.2 按钮放置 — 详情标题头右侧 + 底部刷新**
 
-布局：当前是单按钮（刷新）。改为三按钮：
+布局调整分两部分：
 
-```
-┌─────────────────────────────────────────┐
-│ ACTIONS                                  │
-│ [🔄 刷新]                                │
-│ [🔌 重启] [⏻ 关机]                      │  ← 新行
-└─────────────────────────────────────────┘
-```
+1. **重启 / 关机按钮**：放在 `DetailPanel.tsx` 的标题头 `<h2>` 行右侧，与 hostname + online 状态同行。标题头改为 flex 行：左侧 hostname + 状态文字，右侧 `Space` 容器装两个按钮。
 
+   ```
+   ┌────────────────────────────────────────────────────────────┐
+   │ hostname         [● online]               [🔌 重启] [⏻ 关机]│  ← 标题头
+   ├────────────────────────────────────────────────────────────┤
+   │ <BasicCard>                                                 │
+   │ <NetworkCard>                                               │
+   │ <JetsonCard>                                                │
+   ├────────────────────────────────────────────────────────────┤
+   │ ACTIONS                                                     │
+   │ [🔄 刷新]                                                   │  ← 底部 DeviceActions
+   └────────────────────────────────────────────────────────────┘
+   ```
+
+   实现要点（在 `DetailPanel.tsx` 的 `<h2>` 节点上）：
+   - `<h2>` 改为 `display: flex; justifyContent: space-between; alignItems: center`。
+   - 左侧：`<span>` 包 hostname + 状态。
+   - 右侧：`<Space>` 包两个 `<Button>`（`icon` + 文案），`size="small"`。
+   - 重启按钮：`icon={<PoweroffOutlined />}`，普通样式（蓝色）。
+   - 关机按钮：`icon={<PoweroffOutlined />}` 或 `{<CloseCircleOutlined />}`，`danger` 类型（红色）。
+   - 两个按钮的 `disabled={!device.online}`；`loading={busyAction}` 由各自 state 控制。
+
+2. **刷新按钮**：保留在底部 `DeviceActions`，逻辑不变。
+
+行为：
 - 重启 / 关机按钮在 `device.online === false` 时 `disabled`。
-- 点击触发 `Modal.confirm`：
+- 点击电源按钮触发 `Modal.confirm`：
   - 标题：`即将重启 ${hostname}` / `即将关闭 ${hostname}`。
   - 内容：警告语 + 操作不可逆说明（关机的强调「需手动上电才能恢复」）。
   - OK 按钮文案：`重启` / `关闭电源`，`danger` 类型（红色）。
