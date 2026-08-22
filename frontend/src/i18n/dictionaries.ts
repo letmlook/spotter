@@ -246,6 +246,8 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'metrics.cpu': 'CPU time',
     'metrics.cpuTemp': 'CPU temp',
     'metrics.memUsage': 'Memory used',
+    'card.jetson.not_installed': '未安装',
+    'card.jetson.not_jetson': '该设备不是 Jetson',
     'menu.help': '帮助',
     'menu.help.guide': '设备部署教程…',
     'menu.help.about': '关于 Spotter…',

@@ -1,10 +1,18 @@
 import { Card } from 'antd';
+import { useEffect, useState } from 'react';
 import type { RegistryEntry } from '../state/DeviceContext';
-import { formatUptime } from '../utils/format';
+import { formatUptime, formatTimestamp, relativeTime } from '../utils/format';
 import { useI18n } from '../state/I18nContext';
 
 export default function BasicCard({ device }: { device: RegistryEntry }) {
   const { t } = useI18n();
+  // Tick once per second so uptime / "X 秒前" labels stay current.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const info = device.last_info;
   if (!info) {
     return (
@@ -43,6 +51,13 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
     textOverflow: 'ellipsis',
     flex: '1 1 auto',
     minWidth: 0,
+  };
+  // Inline "ago" labels appear in muted color next to the absolute
+  // timestamp so the operator can read both at once.
+  const ago: React.CSSProperties = {
+    color: 'var(--text-secondary)',
+    fontSize: 11,
+    marginLeft: 6,
   };
   const dist = (os.id ? `${os.id} ${os.version_id || ''}`.trim() : '') || os.pretty_name || '—';
 
@@ -96,7 +111,9 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
         </div>
         <div style={cell}>
           <span style={label}>{t('card.basic.uptime')}</span>
-          <span style={value}>{formatUptime(b.uptime_seconds) || '—'}</span>
+          <span style={value}>
+            {formatUptime(b.uptime_seconds) || '—'}
+          </span>
         </div>
         <div style={cell}>
           <span style={label}>{t('card.basic.os')}</span>
@@ -104,7 +121,10 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
         </div>
         <div style={cell}>
           <span style={label}>{t('card.basic.collected_at')}</span>
-          <span style={value}>{info.collected_at || '—'}</span>
+          <span style={value}>
+            {formatTimestamp(info.collected_at)}
+            <span style={ago}>({relativeTime(info.collected_at, now)})</span>
+          </span>
         </div>
       </div>
       <div style={{ ...cell, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
