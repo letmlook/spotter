@@ -33,7 +33,7 @@
 
 | # | 标准 |
 |---|------|
-| A | agent 端 `enable_power_actions = false`（默认）时，`POST /api/v1/reboot` 与 `/shutdown` 均返回 `403` + `{"error":"power actions disabled"}` |
+| A | agent 端 `enable_power_actions = false`（opt-out）时，`POST /api/v1/reboot` 与 `/shutdown` 均返回 `403` + `{"error":"power actions disabled"}` |
 | B | agent 端 `enable_power_actions = true` 时，`POST /api/v1/reboot` 与 `/shutdown` 返回 `202` + `{"status":"scheduled","action":"reboot"}`，并实际执行 `systemctl reboot` / `systemctl poweroff` |
 | C | agent HTTP handler 异常 panic 走现有 `recoverMiddleware` 返回 500，不影响进程 |
 | D | GUI 设备 offline 时，重启/关机按钮位于详情标题头右侧且 disabled；刷新按钮仍在底部 DeviceActions。点击 online 设备的电源按钮触发 antd Modal 二次确认，文案带设备 hostname；确认后发送 HTTP 请求，成功显示 `message.success` toast |
@@ -113,7 +113,7 @@
   ```go
   EnablePowerActions bool `toml:"enable_power_actions"`
   ```
-- 默认值：**`false`**。TOML 中未设置即为 false。
+- 默认值：**`true`**（自 v0.2 起，安装脚本会显式写入；opt-out 设为 `false`）。早期 spec 把默认列为 `false` 的立场已被废弃，原因是 0.1 GA 时 install.sh 已经显式开启，文档显式 opt-in 反而误导用户——见 `SPEC_DEVIATIONS.md` 记录。
 - `cmd/agent/main.go` 把 `cfg.EnablePowerActions` 透传给 `agentd.New` 的 `Config`。
 
 **3.2.2 HTTP handler (`internal/agentd/http.go`)**

@@ -1,4 +1,4 @@
-.PHONY: test build agent agent-all agent-linux-arm64 agent-linux-x64 client release clean
+.PHONY: test build agent agent-all agent-linux-arm64 agent-linux-x64 client release clean spec-check coverage
 
 GO ?= go
 GOFLAGS ?= -trimpath
@@ -7,6 +7,14 @@ test:
 	$(GO) test ./... -race -count=1
 
 build: agent client
+
+coverage:
+	$(GO) test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
+	@$(GO) tool cover -func=coverage.out | tail -1
+	@rm -f coverage.out
+
+spec-check:
+	@bash scripts/spec-check.sh
 
 # Native build for the host OS/arch (handy for `go run ./cmd/agent`
 # during development on Linux/macOS dev boxes).

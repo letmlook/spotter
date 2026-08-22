@@ -137,7 +137,7 @@ type Config struct {
     EnablePowerActions bool
 
     // New:
-    EnableLogStream bool   // 总开关，默认 false
+    EnableLogStream bool   // 总开关，默认 true（opt-out via false；见 SPEC_DEVIATIONS）
     LogUnit         string // journalctl -u 的 unit 名，默认 "spotterd.service"
 }
 ```
