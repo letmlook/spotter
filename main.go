@@ -179,34 +179,77 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	opts := []func(*scanner.Options){
 		scanner.WithOnEvent(func(e scanner.Event) {
 			logger.Info("scanner event", slog.String("tag", e.Tag()))
-			// mDNS drift: re-anchor the device without user action so
-			// a migration from one subnet to another doesn't drop the
-			// row from the GUI.
-			if drift, ok := e.(scanner.EventDeviceIPDrifted); ok {
-				if drift.NewIP == "" {
+			// Emit on Wails event bus. Wails EventsOn callbacks receive
+			// variadic Go args as a single JS arg, but we marshal
+			// manually so TS side sees the object directly (not []).
+			switch ev := e.(type) {
+			case scanner.EventDeviceIPDrifted:
+				if ev.NewIP == "" {
 					return
 				}
-				err := app.reg.Update(drift.DeviceID, func(en *registry.Entry) {
-					if drift.NewIP != "" {
-						en.IP = drift.NewIP
+				err := app.reg.Update(ev.DeviceID, func(en *registry.Entry) {
+					if ev.NewIP != "" {
+						en.IP = ev.NewIP
 					}
-					if drift.NewPort > 0 {
-						en.Port = drift.NewPort
+					if ev.NewPort > 0 {
+						en.Port = ev.NewPort
 					}
 					en.LastSource = "mdns"
 				})
 				if err != nil {
 					logger.Warn("mdns drift: registry update failed",
-						slog.String("device", drift.DeviceID),
+						slog.String("device", ev.DeviceID),
 						slog.String("err", err.Error()))
 					return
 				}
-				fresh, _ := app.reg.Get(drift.DeviceID)
+				fresh, _ := app.reg.Get(ev.DeviceID)
 				logger.Info("mdns drift re-anchored",
-					slog.String("device", drift.DeviceID),
-					slog.String("from", drift.OldIP),
-					slog.String("to", drift.NewIP))
+					slog.String("device", ev.DeviceID),
+					slog.String("from", ev.OldIP),
+					slog.String("to", ev.NewIP))
 				app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
+				return
+			}
+			// Server-side auto-accept for unknown devices. The JS
+			// EventsOn hook is brittle (variadic-args shape across
+			// wails versions), so we make the runtime-independent
+			// path: add it here and emit info-updated so the UI's
+			// reducer sees a fresh row.
+			if u, ok := e.(scanner.EventUnknownDeviceDiscovered); ok {
+				id := u.Info.DeviceID
+				if id != "" {
+					if _, exists := app.reg.Get(id); !exists {
+						ip := u.IP
+						if ip == "" && u.Info.Network.PrimaryIP != "" {
+							ip = u.Info.Network.PrimaryIP
+						}
+						port := u.Port
+						if port == 0 {
+							port = listenPort
+						}
+						entry := registry.Entry{
+							DeviceID:   id,
+							IP:         ip,
+							Port:       port,
+							Username:   "",
+							DeployedAt: time.Now().UTC().Format(time.RFC3339),
+							LastSource: "accept",
+							Online:     true,
+						}
+						if err := app.reg.Add(entry); err == nil {
+							logger.Info("auto-accepted new device",
+								slog.String("device", id),
+								slog.String("ip", ip))
+							fresh, _ := app.reg.Get(id)
+							app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
+						} else {
+							logger.Warn("auto-accept: registry add failed",
+								slog.String("device", id),
+								slog.String("err", err.Error()))
+						}
+					}
+				}
+				app.emitter.Emit(app.ctx, e.Tag(), e)
 				return
 			}
 			app.emitter.Emit(app.ctx, e.Tag(), e)
@@ -418,6 +461,12 @@ func (a *App) ProbeByIP(ip string, port int, username string) (registry.Entry, e
 // via UDP multicast HELLO or subnet scan) to the local registry, so
 // subsequent polls start tracking it. Returns the new entry.
 func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username string) (registry.Entry, error) {
+	a.logger.Info("accept-unknown-device called",
+		slog.String("device_id", deviceID),
+		slog.String("ip", ip),
+		slog.Int("port", port),
+		slog.String("username", username),
+	)
 	if deviceID == "" {
 		return registry.Entry{}, fmt.Errorf("deviceID required")
 	}

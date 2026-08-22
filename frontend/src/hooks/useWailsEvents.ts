@@ -8,17 +8,23 @@ export function useWailsEvents(onUnknownDevice?: (payload: unknown) => void) {
   useEffect(() => {
     const off1 = EventsOn('info-updated', () => { refresh(); });
     const off2 = EventsOn('offline', () => { refresh(); });
-    const off3 = EventsOn('unknown-device', (payload: unknown) => {
-      if (onUnknownDevice) onUnknownDevice(payload);
-      // silent accept: assume the user wants tracked devices.
-      const data = payload as { Info?: { device_id?: string; network?: { primary_ip?: string } }; IP?: string; Port?: number };
-      const info = data?.Info || {};
-      const ip = data?.IP || info?.network?.primary_ip || '';
-      const port = data?.Port || 9999;
-      const deviceId = info?.device_id;
+    // Wails EventsOn callbacks receive variadic Go args as a JS
+    // array. We Emit(ctx, name, value) so args is a single-element
+    // array. Extract the event from args[0].
+    const off3 = EventsOn('unknown-device', (...args: unknown[]) => {
+      const arg = args[0] as { Info?: { device_id?: string; network?: { primary_ip?: string } }; IP?: string; Port?: number } | undefined;
+      if (onUnknownDevice) onUnknownDevice(arg);
+      const event = arg ?? {};
+      const info = event.Info ?? {};
+      const ip = event.IP ?? info.network?.primary_ip ?? '';
+      const port = event.Port ?? 9999;
+      const deviceId = info.device_id ?? '';
       if (!deviceId) return;
       import('../../wailsjs/go/main/App').then(({ AcceptUnknownDevice }) => {
-        AcceptUnknownDevice(deviceId, ip, port, '').then(refresh).catch(() => {});
+        AcceptUnknownDevice(deviceId, ip, port, '').then(refresh).catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.warn('AcceptUnknownDevice failed', deviceId, err);
+        });
       });
     });
     return () => { off1(); off2(); off3(); };
