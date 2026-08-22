@@ -74,16 +74,20 @@
 
 ```
 ┌──────────────────────────┐                  ┌────────────────────────────────┐
-│  Windows 客户端 (Wails)  │                  │  目标设备 (Linux ARM64)        │
+│  spotter-client (Wails)  │                  │  目标设备 (Linux)              │
 │                          │   TCP/UDP 主动    │                                │
 │  · HTTP 客户端 (轮询)     │ ───────────────► │  · spotterd                    │
 │  · UDP 组播客户端        │                  │    · HTTP server :9999         │
 │  · TCP 子网扫描器        │                  │    · UDP multicast listener    │
-│  · SSH deployer          │ ─── 首次 SSH ──► │    · systemd unit              │
-│  · Registry (本地 JSON)  │                  │    · /etc/spotterd/agent.toml  │
-│  · Wails Web 前端        │                  │                                │
+│  · Registry (本地 JSON)  │                  │    · systemd unit              │
+│  · Wails Web 前端        │                  │    · /etc/spotterd/agent.toml  │
 └──────────────────────────┘                  └────────────────────────────────┘
+                                                       ▲
+                                                       │  手动 scp + ssh（参考 README）
+                                                       │  执行 scripts/install.sh
 ```
+
+注：客户端**不再**包含 SSH 部署 / 卸载能力 —— spotterd 由用户在目标设备上通过 `scripts/install.sh`（或等价的 `scp`+`ssh` 步骤）手动安装。客户端只负责发现与展示。
 
 ---
 
@@ -111,18 +115,15 @@ device_discovery/
 │ │ └── udp.go
 │ ├── registry/               # 客户端：本地注册表持久化
 │ │ └── registry.go
-│ ├── deployer/               # 客户端：SSH 部署 / 卸载
-│ │ ├── deploy.go
-│ │ └── uninstall.go
 │ └── scanner/                # 客户端：三路发现 + 合并
 │ ├── poll.go
 │ ├── mcast.go
 │ ├── subnet.go
 │ └── merge.go
-├── scripts/                  # 部署时一并 scp 的文件
-│ ├── install.sh              # 设备端安装脚本
-│ ├── uninstall.sh            # 设备端卸载脚本
-│ ├── cleanup.sh              # 部署失败回滚脚本
+├── scripts/                  # 手动安装 / 卸载 / 回滚时使用的脚本（与发布包同发）
+│ ├── install.sh              # 设备端安装脚本（手动 ssh 调用）
+│ ├── uninstall.sh            # 设备端卸载脚本（手动 ssh 调用）
+│ ├── cleanup.sh              # 失败后手动回滚脚本
 │ └── spotterd.service        # systemd unit 文件
 ├── frontend/                 # Wails 前端 (Vite + React + TS)
 │ ├── index.html              # Vite 入口 HTML
@@ -149,32 +150,36 @@ device_discovery/
 
 ---
 
-## 5. 部署与卸载流程
+## 5. 手动安装与卸载
 
-### 5.1 部署流程
+客户端**不**驱动安装 / 卸载 —— 这是用户的责任。发布包内随附 `scripts/install.sh`、`scripts/uninstall.sh`、`scripts/cleanup.sh` 与 `scripts/spotterd.service` 作为人工流程的脚手架。
+
+### 5.1 手动安装流程
 
 ```
-[用户] GUI 输入 IP / SSH 端口 / 用户名 / 密码
-   │
-   ▼
-[deployer.Deploy]
-   ├─ SSH 连接（golang.org/x/crypto/ssh）
-   ├─ SFTP 上传 spotterd 二进制 → /tmp/spotterd
-   ├─ SFTP 上传 install.sh → /tmp/install.sh
-   ├─ SFTP 上传 spotterd.service → /tmp/spotterd.service
-   ├─ SSH 执行：SPOTTER_AGENT_VERSION=<client内置版本> bash /tmp/install.sh
-   │   ├─ install -m 0755 /tmp/spotterd /usr/local/bin/spotterd
-   │   ├─ DEVICE_ID="${DEVICE_ID:-$(cat /proc/sys/kernel/random/uuid)}"
-   │   ├─ mkdir -p /etc/spotterd
-   │   ├─ 写 /etc/spotterd/agent.toml { device_id, listen_addr, multicast_group, agent_version }
-   │   ├─ install -m 0644 /tmp/spotterd.service /etc/systemd/system/spotterd.service
-   │   ├─ systemctl daemon-reload
-   │   ├─ systemctl enable --now spotterd
-   │   └─ echo "DEVICE_ID=$DEVICE_ID"（供客户端解析）
-   ├─ 解析 stdout 拿 device_id
-   ├─ 写本地注册表条目（IP / Port / Username / device_id / deployed_at）
-   └─ 立即对该 IP:9999 试探一次 → 成功标记 online
+[开发者机器]                                  [目标 Linux 设备]
+make agent-linux-arm64
+       │
+       ▼
+bin/spotterd-linux-arm64, scripts/install.sh,
+scripts/spotterd.service
+       │  scp
+       ▼
+/tmp/spotterd, /tmp/install.sh, /tmp/spotterd.service
+       │  ssh
+       ▼
+SPOTTER_AGENT_VERSION=<x.y.z> sudo bash /tmp/install.sh
+   ├─ install -m 0755 /tmp/spotterd /usr/local/bin/spotterd
+   ├─ DEVICE_ID="${DEVICE_ID:-$(cat /proc/sys/kernel/random/uuid)}"
+   ├─ mkdir -p /etc/spotterd
+   ├─ 写 /etc/spotterd/agent.toml { device_id, listen_addr, multicast_group, agent_version }
+   ├─ install -m 0644 /tmp/spotterd.service /etc/systemd/system/spotterd.service
+   ├─ systemctl daemon-reload
+   ├─ systemctl enable --now spotterd
+   └─ echo "DEVICE_ID=$DEVICE_ID" 供人工抄录到客户端
 ```
+
+设备启动后，客户端通过 UDP 组播或子网扫描自动发现，无需在 GUI 上做注册动作。客户端不会保存 SSH 凭据，也不需要任何"deploy"交互。
 
 ### 5.2 install.sh
 
@@ -201,29 +206,32 @@ systemctl enable --now spotterd
 echo "DEVICE_ID=$DEVICE_ID"
 ```
 
-### 5.3 卸载流程
+### 5.3 手动卸载流程
 
-```
-[用户] 选中设备 → 卸载
-   ├─ UI 弹窗要求重新输入 SSH 密码（不持久化）
-   ├─ SSH 执行 uninstall.sh：
-   │   ├─ systemctl stop spotterd
-   │   ├─ systemctl disable spotterd
-   │   ├─ rm /etc/systemd/system/spotterd.service
-   │   ├─ rm /usr/local/bin/spotterd
-   │   ├─ rm -rf /etc/spotterd
-   │   └─ systemctl daemon-reload
-   └─ 注册表删除该 device_id 条目
+```bash
+ssh user@<device> sudo bash /tmp/uninstall.sh
 ```
 
-### 5.4 部署失败回滚
+`scripts/uninstall.sh` 在设备本地完成：
 
-| 失败阶段 | 回滚动作 |
+```
+systemctl stop spotterd
+systemctl disable spotterd
+rm /etc/systemd/system/spotterd.service
+rm /usr/local/bin/spotterd
+rm -rf /etc/spotterd
+systemctl daemon-reload
+```
+
+卸载完成后，客户端在下次轮询超时（≈90s）后自动将设备标记 offline，但**不会**自动从注册表删除条目 —— 用户可在客户端用 "Clear" 按钮或 `ProbeByIP` / `AcceptUnknownDevice` 的反向操作手动管理注册表。
+
+### 5.4 install.sh 失败回滚
+
+| 失败阶段 | 用户动作 |
 |---|---|
-| SSH 连接失败 | 无副作用，UI 报错 |
-| SFTP 上传失败 | 残留 `/tmp/spotterd` / `/tmp/install.sh` 等，下次覆盖即可 |
-| install.sh 中途失败 | 执行 `cleanup.sh`（已 mv 二进制就 rm，已 enable unit 就 stop+disable+rm） |
-| install.sh 成功但首次轮询失败 | UI 提示"部署成功但 agent 未响应" |
+| scp 失败 | 重新 scp，残留 `/tmp` 文件下次覆盖 |
+| install.sh 中途失败 | ssh 进设备执行 `bash /tmp/cleanup.sh`（stop+disable+rm 已写入的部分） |
+| install.sh 成功但客户端未发现 | 检查网络连通性；用客户端 "Add by IP" 输入 `<ip>:9999` 手动注册 |
 
 ---
 
@@ -378,29 +386,7 @@ func (r *Registry) FindByIP(ip string, port int) (*Entry, bool)
 - 每次 mutation 后写整个 JSON 文件
 - 损坏处理：备份 `devices.json.corrupt-<timestamp>` → 启动空表
 
-### 7.6 `internal/deployer`
-```go
-type Deployer struct{}
-
-type DeployRequest struct {
-    IP       string
-    SSHPort  int    // 默认 22
-    Username string
-    Password string
-}
-
-type DeployResult struct {
-    DeviceID string
-}
-
-func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult, error)
-func (d *Deployer) Uninstall(ctx context.Context, req DeployRequest) error
-```
-- SSH：golang.org/x/crypto/ssh
-- 文件传输：SFTP 子系统
-- 脚本：`scripts/install.sh` 等用 `embed.FS` 嵌入 deployer 二进制
-
-### 7.7 `internal/scanner`
+### 7.6 `internal/scanner`
 ```go
 type Scanner struct {
     reg       *registry.Registry
@@ -424,13 +410,14 @@ func (s *Scanner) RefreshNow(ctx context.Context)
 - `mcastLoop`：每 60s 发 HELLO + 收集 REPLY
 - `merge()`：以 device_id 为 key 合并 → 调 reg.Update + 发 Event
 
-### 7.8 `cmd/client/main.go` (Wails)
+### 7.7 `cmd/client/main.go` (Wails)
 导出给前端 API（Wails 自动绑定，方法名首字母大写）：
-- `DeployDevice(ctx, ip, sshPort, password) (deviceID, error)`
-- `UninstallDevice(ctx, deviceID, password) error`
 - `ListDevices() []registry.Entry`
-- `ScanSubnet(ctx, cidr) error`
-- `RefreshNow(ctx) error`
+- `ScanSubnet(cidr string) error`
+- `RefreshNow() error`
+- `ProbeByIP(ip string, port int, username string) (registry.Entry, error)`
+- `AcceptUnknownDevice(deviceID, ip string, port int, username string) (registry.Entry, error)`
+- `ClearRegistry() (int, error)`
 
 事件推送使用 Wails 框架：`scanner` 调用 `runtime.EventsEmit(ctx, "device:info-updated", payload)`，前端通过 `EventsOn('device:info-updated', handler)` 订阅；不暴露额外 Go API。
 
@@ -514,11 +501,10 @@ WantedBy=multi-user.target
 ### 10.3 注册表文件损坏
 - 加载失败 → 备份为 `devices.json.corrupt-<timestamp>` → 启动空表 → 日志 WARN
 
-### 10.4 部署原子性
-- SSH 失败 → 无副作用
-- SFTP 失败 → 残留 /tmp 文件下次覆盖
-- install.sh 失败 → 跑 cleanup.sh 回滚
-- install.sh 成功但首次轮询失败 → UI 提示人工检查
+### 10.4 install.sh 鲁棒性
+- scp 失败：用户重新 scp；`/tmp` 残留文件下次覆盖即可
+- install.sh 中途失败：用户 ssh 进设备执行 `scripts/cleanup.sh`（stop+disable+rm 已写入的部分）
+- install.sh 成功但客户端未发现：用户用客户端 "Add by IP" 输入 `<ip>:9999` 手动注册
 
 ### 10.5 可观测性
 
@@ -540,14 +526,13 @@ WantedBy=multi-user.target
 |---|---|
 | HTTP 端点 | 无认证 |
 | UDP 组播 | 无认证 |
-| SSH 凭据 | 不持久化（每次重输） |
 | agent.toml | 明文 |
-| Windows 客户端 | 单机使用 |
+| spotter-client | 单机使用 |
 
-**风险接受**：MVP 部署在内网/可信环境，敏感信息（serial、IP 拓扑）泄露可控。
+**风险接受**：MVP 部署在内网/可信环境，敏感信息（serial、IP 拓扑）泄露可控。客户端不再接触 SSH 凭据 —— spotterd 由用户手动安装，SSH 凭据只存在于用户本地 `scp` / `ssh` 调用链中，客户端不缓存。
 
 ### 11.2 MVP 升级路径（v1.x 留口子，不实现）
-- HTTP `Authorization: Bearer <token>`，token 由 deployer 生成写入 agent.toml
+- HTTP `Authorization: Bearer <token>`，token 由用户首次手动写入 agent.toml
 - token 通过 SSH 安全通道首次分发
 
 ### 11.3 攻击面缓解（MVP）
@@ -555,9 +540,8 @@ WantedBy=multi-user.target
 |---|---|
 | 任意客户端读 :9999 | 部署内网 + 防火墙限制源 IP |
 | 任意 HELLO | 设备端按来源 IP 限速（10 req/s） |
-| SSH 凭据泄露 | MVP 每次重输；未来可选"仅本次会话缓存" |
-| install.sh 注入 | install.sh 不解析用户输入，仅用客户端生成的 DEVICE_ID |
 | agent.toml 篡改 | v1.x 加 token 认证 |
+| 手动安装流程注入 | `install.sh` 不解析用户输入，仅用客户端生成的 DEVICE_ID（v1.x）或首次运行时生成的 DEVICE_ID（MVP） |
 
 ---
 
@@ -565,7 +549,7 @@ WantedBy=multi-user.target
 
 ### 12.1 分层
 - **Unit**（Go test，无外部依赖）：protocol / collector / registry / agentd handler
-- **Integration**（dockertest）：deployer（真容器）/ scanner（httptest + loopback UDP）
+- **Integration**（dockertest）：scanner（httptest + loopback UDP）；install.sh 在 Ubuntu 容器内的 smoke test
 - **E2E**（手动）：真机 Jetson / arm64 Ubuntu VM 验收
 
 ### 12.2 关键用例
@@ -576,27 +560,26 @@ WantedBy=multi-user.target
 | `collector` | mock `/etc/os-release`；Jetson 4 路径覆盖 |
 | `registry` | Add/Update/Remove；持久化 round-trip；损坏文件恢复 |
 | `agentd` | HTTP `/info` 返回缓存；UDP HELLO → REPLY；端口冲突退出码非 0 |
-| `deployer` | 集成：Ubuntu 容器，Deploy → service active → Uninstall → gone |
 | `scanner` | mock HTTP timeout/5xx/OK；mock UDP reply；merge 去重 |
+| `scripts/install.sh` | dockertest Ubuntu 容器内：调用 → service active → `uninstall.sh` → gone |
 
 ### 12.3 手动验收
-1. 部署真机 → 30s 内 online
+1. 手动安装真机 → 30s 内 online
 2. UI 显示完整字段
 3. 同 VLAN 设备 60s 内出现在 UI
 4. 子网扫描命中 + 未注册设备均显示
 5. 杀 spotterd → 90s 内 UI offline；重启 → UI online
-6. 卸载 → service 消失 / 二进制不在 / 注册表条目消失
+6. 客户端 "Add by IP" 手动注册已知设备并显示
 
 ---
 
 ## 13. 已知限制（写入 README）
 
 - 不支持非 systemd 设备（Yocto / Buildroot）
-- 不支持 macOS / Linux 客户端（仅 Windows）
 - 不做远程命令执行
 - 同 VLAN UDP 组播需路由器允许组播转发（默认多数不通）
 - HTTP 端点无认证，仅适合可信内网
-- 不持久化 SSH 凭据
+- 客户端不部署 / 不卸载 spotterd —— 由用户在设备上手动执行 `scripts/install.sh` / `scripts/uninstall.sh`
 
 ---
 
@@ -604,10 +587,10 @@ WantedBy=multi-user.target
 
 1. **协议与共享类型**：`internal/protocol`
 2. **设备端基础**：`collector` + `agentd` + `cmd/agent` + `scripts/install.sh` + `scripts/spotterd.service`
-3. **客户端基础**：`registry` + `deployer` + `cmd/client` 最小骨架（Wails 占位）
+3. **客户端基础**：`registry` + `scanner` + `cmd/client` 最小骨架（Wails 占位）
 4. **scanner 三路发现**：`scanner/poll.go` + `scanner/mcast.go` + `scanner/subnet.go` + `scanner/merge.go`
 5. **Wails 前端 UI**：`frontend/` (Vite + React + TS)
-6. **集成测试**：dockertest deployer 端到端
+6. **集成测试**：dockertest scanner 端到端 + install.sh 在 Ubuntu 容器内的 smoke
 7. **手动验收**：真机 Jetson
 
 ---
@@ -624,7 +607,6 @@ device_discovery/
 │ ├── collector/{collector.go,basic_linux.go,network_linux.go,jetson_linux.go,*_test.go}
 │ ├── agentd/{agent.go,http.go,udp.go,*_test.go}
 │ ├── registry/registry.go,registry_test.go
-│ ├── deployer/{deploy.go,uninstall.go,deploy_test.go}
 │ └── scanner/{poll.go,mcast.go,subnet.go,merge.go,*_test.go}
 ├── scripts/{install.sh,uninstall.sh,cleanup.sh,spotterd.service}
 ├── ui/{index.html,app.js,styles.css}  ← 已迁移至 frontend/ (Vite + React + TS)

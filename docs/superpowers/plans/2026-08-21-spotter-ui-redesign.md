@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **⚠️ 历史文档（2026-08-21）—— 部分内容已被后续 commit 推翻。** 提交 `13598a4 refactor: drop deploy/uninstall-from-GUI` 移除了整个 deploy/uninstall 自动化路径。下面这些段落的"设计意图"已经过期，**实际代码以 `main.go` / 当前 `frontend/src/` 为准**：
+>
+> - **Task 10**（`ActionPanel` Deploy 表单 / SSH 凭据输入）—— 已移除
+> - **Task 11**（`useDeviceActions` 中的 `deploy` / `uninstall` 入口）—— 已移除
+> - **Task 12** 中 EmptyState 的 Deploy 按钮 / `onAction('deploy')` 联动 —— 已移除
+> - **Task 13**（`DeviceActions` 卸载按钮 + 密码框）—— 已移除
+>
+> 其他 Task（TitleBar、Sidebar、DetailPanel、DetailPanel 的 Refresh、注册表清理、useWailsEvents、DeviceContext 等）仍然反映当前实现。此文档保留用于追溯当时的 UI 重构决策；如需重写，请参考 `docs/superpowers/specs/2026-08-21-spotter-design.md` 中已经更新的"7.7 cmd/client/main.go"和"8. 前端 UI"章节。
+
 **Goal:** 将 Spotter Windows GUI 客户端从单 HTML + Vanilla JS 重构为 React + Vite + TypeScript + Ant Design 5，添加自定义无边框标题栏，所有用户输入改为界面内 inline 表单。
 
 **Architecture:** Wails v2 内置 Vite 接管前端构建；后端 Go bindings 不变；前端拆为 TitleBar / Sidebar / MainArea 三大区，sidebar 顶部三个互斥展开的 inline 表单，DetailPanel 底部常驻操作条；状态用 Context + useReducer，事件订阅用 useEffect。
