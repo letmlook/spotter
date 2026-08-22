@@ -6,15 +6,31 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"runtime/debug"
 	"time"
 )
+
+// ExecSystemctl invokes systemctl with the given action. Package-level
+// for test injection; production code does not override it.
+var ExecSystemctl = func(action string) error {
+	cmd := exec.Command("systemctl", action)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Hand the child to systemd (PID 1) so the agent doesn't keep it
+	// attached to its std{fd}. Do NOT Wait — reboot/poweroff will hang
+	// the connection.
+	return cmd.Process.Release()
+}
 
 // Handler returns the HTTP handler exposing /healthz and /api/v1/info.
 func (a *Agent) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealthz)
 	mux.HandleFunc("/api/v1/info", a.handleInfo)
+	mux.HandleFunc("/api/v1/reboot", a.handlePowerAction("reboot"))
+	mux.HandleFunc("/api/v1/shutdown", a.handlePowerAction("shutdown"))
 	return a.recoverMiddleware(mux)
 }
 
@@ -29,6 +45,42 @@ func (a *Agent) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		a.logger.Error("encode info", slog.String("err", err.Error()))
+	}
+}
+
+// handlePowerAction returns an http.Handler for POST /api/v1/{reboot,shutdown}.
+// The action string is both the URL suffix passed to systemctl and the
+// "action" field echoed in the 202 response body.
+func (a *Agent) handlePowerAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !a.cfg.EnablePowerActions {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "power actions disabled",
+			})
+			return
+		}
+		if err := ExecSystemctl(action); err != nil {
+			a.logger.Error("start systemctl",
+				slog.String("action", action),
+				slog.String("err", err.Error()))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		a.logger.Info("power action scheduled", slog.String("action", action))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "scheduled",
+			"action": action,
+		})
 	}
 }
 
