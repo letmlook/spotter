@@ -9,19 +9,20 @@ interface DeviceSetupGuideProps {
   onClose: () => void;
 }
 
-function CodeBlock({ children, dark = true }: { children: string; dark?: boolean }) {
+function CodeBlock({ children }: { children: string }) {
   const text = children.replace(/\n$/, '');
   return (
     <div
       style={{
         position: 'relative',
-        background: dark ? '#1a1a1a' : 'var(--bg-elevated)',
+        background: 'var(--bg-elevated)',
         border: '1px solid var(--border)',
         borderRadius: 4,
         padding: '8px 36px 8px 12px',
         margin: '4px 0',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: 12,
+        color: 'var(--text-primary)',
         whiteSpace: 'pre',
         overflowX: 'auto',
       }}

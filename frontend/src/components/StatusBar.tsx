@@ -10,8 +10,8 @@ export default function StatusBar() {
         height: 24, flexShrink: 0,
         padding: '0 16px',
         display: 'flex', alignItems: 'center',
-        background: '#0a0a0a', borderTop: '1px solid #303030',
-        fontSize: 12, color: '#888',
+        background: 'var(--bg-app)', borderTop: '1px solid var(--border)',
+        fontSize: 12, color: 'var(--text-secondary)',
       }}
     >
       {online} online / {total} total

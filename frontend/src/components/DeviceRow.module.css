@@ -4,13 +4,14 @@
   cursor: pointer;
   border-radius: 4px;
   margin: 2px 0;
+  color: var(--text-primary);
 }
-.row:hover { background: #262626; }
-.selected { background: #1f3a5f; }
-.selected:hover { background: #1f3a5f; }
+.row:hover { background: var(--bg-hover); }
+.selected { background: rgba(22, 119, 255, 0.15); }
+.selected:hover { background: rgba(22, 119, 255, 0.22); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .online { background: #52c41a; box-shadow: 0 0 6px #52c41a; }
 .offline { background: #b71c1c; }
 .text { flex: 1; min-width: 0; }
-.ip { color: #fff; font-weight: 500; font-size: 13px; }
-.sub { color: #888; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip { color: var(--text-primary); font-weight: 500; font-size: 13px; }
+.sub { color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
