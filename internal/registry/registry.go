@@ -52,6 +52,7 @@ type Entry struct {
 	LastSource string               `json:"last_source"`
 	Online     bool                 `json:"online"`
 	LastInfo   *protocol.DeviceInfo `json:"last_info,omitempty"`
+	Tags       []string             `json:"tags,omitempty"` // v0.5: user-applied labels
 }
 
 // Registry is safe for concurrent use.

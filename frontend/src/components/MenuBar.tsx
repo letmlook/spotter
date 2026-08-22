@@ -6,7 +6,7 @@ import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useI18n } from '../state/I18nContext';
 import { useTheme } from '../state/ThemeContext';
 import { ClearRegistry } from '../../wailsjs/go/main/App';
-import { Quit } from '../../wailsjs/runtime/runtime';
+import { Quit, WindowClose } from '../../wailsjs/runtime/runtime';
 import type { Locale } from '../i18n/dictionaries';
 
 interface MenuItemSpec {
@@ -65,6 +65,7 @@ export default function MenuBar() {
   };
 
   const fileMenu: MenuItemSpec[] = [
+    { key: 'close', label: t('menu.file.close'), shortcut: '⌘W', onClick: WindowClose },
     { key: 'quit', label: t('menu.file.quit'), shortcut: '⌘Q', onClick: Quit },
   ];
 

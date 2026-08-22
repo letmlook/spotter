@@ -25,15 +25,27 @@ jobs:
           - id: agent-arm64
             label: spotterd (linux/arm64)
             runs-on: ubuntu-latest
-            build: agent-linux-arm64
+            build_cmd: make agent-linux-arm64
             artifact_name: spotterd-linux-arm64
             artifact_path: bin/spotterd-linux-arm64
           - id: agent-amd64
             label: spotterd (linux/amd64)
             runs-on: ubuntu-latest
-            build: agent-linux-x64
+            build_cmd: make agent-linux-x64
             artifact_name: spotterd-linux-x64
             artifact_path: bin/spotterd-linux-x64
+          - id: server-amd64
+            label: spotter-server (linux/amd64)
+            runs-on: ubuntu-latest
+            build_cmd: go build -trimpath -o bin/spotter-server ./cmd/spotter-server
+            artifact_name: spotter-server-linux-amd64
+            artifact_path: bin/spotter-server
+          - id: cli-amd64
+            label: spotter-cli (linux/amd64)
+            runs-on: ubuntu-latest
+            build_cmd: go build -trimpath -o bin/spotter-cli ./cmd/spotter-cli
+            artifact_name: spotter-cli-linux-amd64
+            artifact_path: bin/spotter-cli
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout
@@ -60,7 +72,7 @@ jobs:
           npm ci --no-audit --fund=false
 
       - name: Build ${{ matrix.label }}
-        run: make ${{ matrix.build }}
+        run: ${{ matrix.build_cmd }}
 
       - name: Upload ${{ matrix.artifact_name }}
         uses: actions/upload-artifact@v4
@@ -181,6 +193,8 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')
     needs: [build, client-linux]
     runs-on: ubuntu-latest
+    env:
+      GITHUB_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -207,6 +221,13 @@ jobs:
           sort -u SHA256SUMS -o SHA256SUMS
           cat SHA256SUMS
 
+      - name: Verify init scripts syntactically
+        run: |
+          bash -n scripts/init/openrc/spotterd
+          bash -n scripts/init/runit/spotterd.run
+          bash -n scripts/install.sh
+          bash -n scripts/update-homebrew-sha.sh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -220,6 +241,8 @@ jobs:
           files: |
             dist/spotterd-linux-arm64
             dist/spotterd-linux-x64
+            dist/spotter-server-linux-amd64
+            dist/spotter-cli-linux-amd64
             dist/spotter-client-linux-amd64
             dist/SHA256SUMS
           fail_on_unmatched_files: false

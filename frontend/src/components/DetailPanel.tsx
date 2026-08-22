@@ -9,6 +9,9 @@ import NetworkCard from './NetworkCard';
 import JetsonCard from './JetsonCard';
 import EmptyState from './EmptyState';
 import LogSection from './LogSection';
+import MetricSpark from './MetricSpark';
+import { useEffect, useState } from 'react';
+import { Tag as AntTag } from 'antd';
 
 type PowerAction = 'reboot' | 'shutdown';
 
@@ -20,6 +23,26 @@ export default function DetailPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const device = state.devices.find((d) => d.device_id === state.selectedId);
   const hostname = device?.last_info?.basic?.hostname || device?.ip || '';
+  // Rolling history of CPU seconds + CPU temp; the parent component
+  // re-renders whenever the registry snapshot changes (every poll
+  // cycle). We cap history at 80 samples (~6 minutes at 5s poll).
+  const [cpuHist, setCpuHist] = useState<number[]>([]);
+  const [tempHist, setTempHist] = useState<number[]>([]);
+  const [memHist, setMemHist] = useState<number[]>([]);
+  useEffect(() => {
+    const mi = device?.last_info?.metrics;
+    if (!mi) return;
+    if (mi.cpu_seconds_total != null) {
+      setCpuHist((prev) => [...prev.slice(-79), mi.cpu_seconds_total as number]);
+    }
+    if (mi.cpu_temp_c != null) {
+      setTempHist((prev) => [...prev.slice(-79), mi.cpu_temp_c as number]);
+    }
+    if (mi.mem_total_bytes && mi.mem_available_bytes) {
+      const used = 1 - (mi.mem_available_bytes as number) / (mi.mem_total_bytes as number);
+      setMemHist((prev) => [...prev.slice(-79), used * 100]);
+    }
+  }, [device?.last_info?.metrics]);
 
   const onRefresh = async () => {
     if (!device) return;
@@ -136,6 +159,18 @@ export default function DetailPanel() {
             </div>
             <div style={{ marginTop: 12 }}>
               <NetworkCard device={device} />
+            </div>
+            {(device.tags && device.tags.length > 0) && (
+              <div style={{ marginTop: 8 }}>
+                {device.tags.map((tag) => (
+                  <AntTag key={tag} color="blue">{tag}</AntTag>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 12, display: 'flex', gap: 16 }}>
+              <MetricSpark label={t('metrics.cpu')} unit="s" points={cpuHist} color="#69b1ff" decimals={1} />
+              <MetricSpark label={t('metrics.cpuTemp')} unit="°C" points={tempHist} color="#ffc53d" decimals={0} />
+              <MetricSpark label={t('metrics.memUsage')} unit="%" points={memHist} color="#95de64" decimals={1} />
             </div>
           </>
         )}

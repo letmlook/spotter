@@ -5,13 +5,45 @@ import { useMenu } from '../state/MenuContext';
 import { useDevices } from '../state/DeviceContext';
 import { useI18n } from '../state/I18nContext';
 import DeviceList from './DeviceList';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_DEFAULT = 260;
+const SIDEBAR_KEY = 'spotter-sidebar-width';
 
 export default function Sidebar() {
   const { state, refresh } = useDevices();
   const { triggerScan } = useMenu();
   const { t } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem(SIDEBAR_KEY);
+      const n = v ? Number(v) : SIDEBAR_DEFAULT;
+      return Number.isFinite(n) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, n)) : SIDEBAR_DEFAULT;
+    } catch { return SIDEBAR_DEFAULT; }
+  });
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_KEY, String(width)); } catch { /* ignore */ }
+  }, [width]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
+      setWidth(next);
+    };
+    const onUp = () => { draggingRef.current = false; document.body.style.cursor = ''; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
 
   const onQuickScan = async () => {
     try {
@@ -38,13 +70,14 @@ export default function Sidebar() {
   };
 
   return (
-    <aside
-      style={{
-        width: 260, flexShrink: 0,
-        background: 'var(--bg-app)', borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-      }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'row', flexShrink: 0 }}>
+      <aside
+        style={{
+          width, flexShrink: 0,
+          background: 'var(--bg-app)', borderRight: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '10px 12px', borderBottom: '1px solid var(--border)',
@@ -91,6 +124,21 @@ export default function Sidebar() {
         </Space>
       </div>
       <DeviceList />
-    </aside>
+      </aside>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onMouseDown={() => {
+          draggingRef.current = true;
+          document.body.style.cursor = 'col-resize';
+        }}
+        style={{
+          width: 4,
+          cursor: 'col-resize',
+          background: 'transparent',
+        }}
+        data-testid="sidebar-resizer"
+      />
+    </div>
   );
 }

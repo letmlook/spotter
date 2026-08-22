@@ -10,6 +10,10 @@ import (
 	"github.com/spotter/spotter/internal/protocol"
 )
 
+// SetAuditLogger attaches an AuditLogger to the agent. Called by
+// cmd/agent after config load; nil disables audit persistence.
+func (a *Agent) SetAuditLogger(al *AuditLogger) { a.audit = al }
+
 // Config holds the agent's runtime settings.
 type Config struct {
 	DeviceID           string
@@ -69,6 +73,11 @@ type Agent struct {
 	// actions / log streams. Allocated lazily inside Handler().
 	limiter  *ipLimiter
 	limOnce  sync.Once
+
+	// audit persists every power dispatch to a TSV file the
+	// operator can grep / forward to a SIEM. Optional — set by
+	// the cmd/agent setup path.
+	audit *AuditLogger
 }
 
 // New constructs an Agent. Returns an error if cfg is missing required fields.

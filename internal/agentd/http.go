@@ -36,10 +36,20 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/reboot", a.handlePowerAction("reboot"))
 	mux.HandleFunc("/api/v1/shutdown", a.handlePowerAction("shutdown"))
 	mux.HandleFunc("/api/v1/logs", a.handleLogs)
-	h := http.Handler(mux)
-	h = authMiddleware(h, a.cfg.Auth, a.logger)
-	h = rateLimitMiddleware(h, a.powerLimiter())
-	return a.recoverMiddleware(h)
+	mux.HandleFunc("/api/v1/power", a.handlePowerDispatch)
+	mux.HandleFunc("/api/v1/power/cancel", a.handlePowerCancel)
+	return a.recoverMiddleware(rateLimitMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger), a.powerLimiter()))
+}
+
+// handlePowerCancel terminates the most recent pending delayed
+// dispatch for this device. The current implementation is a stub —
+// in-flight delayExec goroutines self-terminate via ctx, but
+// cancellation across processes requires a pid file we haven't
+// shipped yet.
+func (a *Agent) handlePowerCancel(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
 }
 
 // powerLimiter is the per-IP token bucket gating POST

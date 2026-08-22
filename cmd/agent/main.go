@@ -149,6 +149,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Open audit log for power-action traceability.
+	auditPath := "/var/log/spotterd/audit.tsv"
+	if a, err := agentd.NewAuditLogger(auditPath); err == nil {
+		agent.SetAuditLogger(a)
+		log.Info("audit log open", slog.String("path", auditPath))
+	} else {
+		log.Warn("audit log unavailable", slog.String("err", err.Error()))
+	}
+
 	// Register the agent under _spotter._tcp via mDNS so clients can
 	// re-anchor when the device migrates to a different subnet. The
 	// announce lives until ctx is cancelled (zeroconf owns the
