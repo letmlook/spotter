@@ -1,130 +1,119 @@
 # Spotter
 
-LAN device discovery for Linux devices (ARM64 SBCs such as Jetson,
-plus AMD64 servers and workstations).
+[中文版本](README.md) · [English](README.en.md)
 
-- **Device side**: a single-file Go binary `spotterd` (systemd unit) at
-  `cmd/agent/`. Built for Linux on **both `arm64` and `amd64`**.
-- **Client side**: `spotter-client`, a Wails desktop GUI with **native
-  builds for Windows, macOS and Linux**. The entrypoint lives at the
-  project root and embeds the UI from `frontend/` (Vite + React + TS).
+局域网设备发现工具，面向 Linux 设备（ARM64 单板机，例如 Jetson，以及 AMD64 服务器与工作站）。
 
-The client discovers devices via three sources, all of which feed a
-single merge pipeline:
+- **设备端**：单一 Go 二进制 `spotterd`（systemd 单元），源码位于 `cmd/agent/`，可构建 **arm64 与 amd64** 两种架构。
+- **客户端**：`spotter-client`，Wails 桌面 GUI，原生支持 **Windows、macOS 与 Linux**。入口位于项目根目录，嵌入 `frontend/`（Vite + React + TS）构建的前端。
 
-1. **Registry poll** (HTTP GET `/api/v1/info` every 30s)
-2. **UDP multicast** (`239.255.42.42:9999`, every 60s)
-3. **Manual subnet scan** (TCP probe + `/healthz` + `/api/v1/info`)
+客户端通过三条管道发现设备，最终统一汇入合并流水线：
 
-## Platform support
+1. **注册表轮询**（HTTP GET `/api/v1/info`，每 30 秒）
+2. **UDP 组播**（`239.255.42.42:9999`，每 60 秒）
+3. **手动子网扫描**（TCP 探测 + `/healthz` + `/api/v1/info`）
 
-| Component       | Linux arm64 | Linux amd64 | Windows | macOS |
-|-----------------|:-----------:|:-----------:|:-------:|:-----:|
-| `spotterd`      | ✓           | ✓           | —       | —     |
-| `spotter-client`| ✓           | ✓           | ✓       | ✓     |
+## 平台支持
 
-`spotterd` is Linux-only because it depends on `systemd` for service
-management; `spotter-client` is a standard Wails app and follows the
-Wails matrix exactly.
+| 组件              | Linux arm64 | Linux amd64 | Windows | macOS |
+|-------------------|:-----------:|:-----------:|:-------:|:-----:|
+| `spotterd`        | ✓           | ✓           | —       | —     |
+| `spotter-client`  | ✓           | ✓           | ✓       | ✓     |
 
-## Build
+`spotterd` 仅支持 Linux，因为它依赖 `systemd` 管理服务；`spotter-client` 是标准 Wails 应用，完全遵循 Wails 自身的多平台矩阵。
 
-The `Makefile` is the project's source of truth for build targets.
+## 构建
+
+`Makefile` 是构建目标的唯一权威入口。
 
 ```bash
-# Unit tests (race detector, full module)
+# 单元测试（启用竞态检测，覆盖全模块）
 make test
 
-# Device-side binaries for both supported Linux arches
+# 一次性构建两个支持架构的设备端二进制
 make agent-all
 
-# Single-arch device builds (for staging one arch at a time)
+# 单架构构建（便于分阶段发布）
 make agent-linux-arm64
 make agent-linux-x64
 
-# Cross-platform desktop client (Windows / macOS / Linux)
-# Wails selects the active platform from GOOS.
+# 跨平台桌面客户端（Windows / macOS / Linux）
+# Wails 根据当前 GOOS 选择目标平台
 make client
 ```
 
-`make client` prefers the `wails` CLI when available and falls back to
-`go build` otherwise (the fallback path does not produce a macOS
-`.app` bundle — see the per-platform notes below).
+`make client` 优先调用 `wails` CLI；若不可用则回退到 `go build`（注意：macOS 上的回退路径不会产出 `.app` 包，详见下文各平台说明）。
 
-### Client on macOS
+### 在 macOS 上构建客户端
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 cd frontend && npm install && cd ..
-make client          # produces build/bin/Spotter.app
+make client          # 产物：build/bin/Spotter.app
 open build/bin/Spotter.app
 ```
 
-### Client on Windows (PowerShell)
+### 在 Windows 上构建客户端（PowerShell）
 
 ```powershell
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 cd frontend; npm install; cd ..
 make client
-# Produces build\bin\spotter-client.exe
+# 产物：build\bin\spotter-client.exe
 ```
 
-### Client on Linux
+### 在 Linux 上构建客户端
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 cd frontend && npm install && cd ..
 make client
-# Produces build/bin/spotter-client
+# 产物：build/bin/spotter-client
 ```
 
-Wails pulls frontend deps and bundles them. To work on the UI in
-isolation, install deps and build the Vite project:
+Wails 会自动拉取前端依赖并完成打包。如需独立开发 UI，可单独构建 Vite 项目：
 
 ```bash
 cd frontend && npm install && npm run build
 ```
 
-Artifacts are written to `bin/`:
+构建产物输出到 `bin/`：
 
-| Artifact                            | Source            | Target        |
-|-------------------------------------|-------------------|---------------|
-| `bin/spotterd-linux-arm64`          | `cmd/agent/`      | Linux ARM64   |
-| `bin/spotterd-linux-x64`            | `cmd/agent/`      | Linux AMD64   |
-| `bin/spotterd`                      | `cmd/agent/`      | host GOOS/GOARCH |
-| `bin/spotter-client` / `.exe`       | root `main.go`    | host GOOS     |
-| `build/bin/Spotter.app`             | `wails build`     | macOS bundle  |
+| 产物                                | 源码             | 目标平台         |
+|-------------------------------------|------------------|------------------|
+| `bin/spotterd-linux-arm64`          | `cmd/agent/`     | Linux ARM64      |
+| `bin/spotterd-linux-x64`            | `cmd/agent/`     | Linux AMD64      |
+| `bin/spotterd`                      | `cmd/agent/`     | 当前 GOOS/GOARCH |
+| `bin/spotter-client` / `.exe`       | 根目录 `main.go` | 当前 GOOS        |
+| `build/bin/Spotter.app`             | `wails build`    | macOS 应用包     |
 
-## Deploy to a device
+## 部署到设备
 
-The GUI collects `IP / SSH port / username / password`, picks the
-right `spotterd` binary for the target architecture, and runs:
+GUI 收集 `IP / SSH 端口 / 用户名 / 密码` 后，按目标架构选择对应的 `spotterd` 二进制并执行：
 
 ```bash
 sftp put bin/spotterd-linux-<arch> /tmp/spotterd
 sftp put scripts/install.sh        /tmp/install.sh
 sftp put scripts/spotterd.service  /tmp/spotterd.service
-ssh bash /tmp/install.sh           # exports SPOTTER_AGENT_VERSION
+ssh bash /tmp/install.sh           # 同时导出 SPOTTER_AGENT_VERSION
 ```
 
-The install script:
+安装脚本会：
 
-1. Installs `spotterd` to `/usr/local/bin/`.
-2. Generates a `device_id` (UUID v4) and writes `/etc/spotterd/agent.toml`.
-3. Installs the systemd unit and enables it.
+1. 将 `spotterd` 安装到 `/usr/local/bin/`。
+2. 生成 `device_id`（UUID v4）并写入 `/etc/spotterd/agent.toml`。
+3. 安装并启用 systemd 单元。
 
-Uninstall uses `scripts/uninstall.sh`; full teardown uses
-`scripts/cleanup.sh`.
+卸载使用 `scripts/uninstall.sh`；彻底清理使用 `scripts/cleanup.sh`。
 
-## Known limitations (MVP)
+## 已知限制（MVP）
 
-- Linux devices with **systemd** only (Ubuntu / Jetson / Debian / RHEL;
-  both `arm64` and `amd64`).
-- **No remote command execution** — static info panel only.
-- UDP multicast is **L2-only** (same VLAN) unless routers forward.
-- HTTP endpoints have **no authentication** — deploy on trusted LANs only.
-- SSH credentials are **never persisted** (re-enter per deploy / uninstall).
+- 设备端仅支持运行 **systemd** 的 Linux（Ubuntu / Jetson / Debian / RHEL；`arm64` 与 `amd64` 均可）。
+- **不支持远端命令执行** —— 仅提供静态信息面板。
+- UDP 组播仅限 **L2**（同 VLAN），除非路由器主动转发。
+- HTTP 端点 **无身份认证** —— 仅限可信局域网内部署。
+- SSH 凭据 **从不持久化**（每次部署 / 卸载都需重新输入）。
 
-## Architecture
+## 架构设计
 
-See [`docs/superpowers/specs/2026-08-21-spotter-design.md`](docs/superpowers/specs/2026-08-21-spotter-design.md).
+详见 [`docs/superpowers/specs/2026-08-21-spotter-design.md`](docs/superpowers/specs/2026-08-21-spotter-design.md)。
