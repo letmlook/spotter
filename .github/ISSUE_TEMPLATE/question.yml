@@ -1,0 +1,35 @@
+name: Question
+description: Ask how to do something within Spotter's documented scope.
+title: "[question] "
+labels: ["question"]
+assignees: []
+body:
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Building (Makefile, wails, scripts/build-all.sh)
+        - Deploying (`make agent-*`, `scripts/deploy.*`)
+        - Using the client (UI walkthrough, registry, scan)
+        - Configuring (agent.toml, registry, log location)
+        - Networking (UDP multicast, subnets, firewalls)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What are you trying to do?
+      description: Brief context first — goal, what you've tried.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you already tried?
+      description: Commands, settings, docs you consulted.
+    validations:
+      required: false

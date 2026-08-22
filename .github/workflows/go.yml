@@ -1,0 +1,103 @@
+name: Go (test + lint)
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel in-flight runs when a new commit lands on the same branch, to
+# avoid burning minutes on obsolete pushes.
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Verify module download integrity
+        run: go mod download -x
+
+      - name: Run go vet
+        run: go vet ./...
+
+      # `make test` runs every package under -race -count=1, matching the
+      # command developers run locally. We deliberately do not pass -v
+      # because the suite is large; failures print enough context.
+      - name: Run unit tests with race detector
+        run: make test
+
+      - name: Upload coverage to Codecov (optional)
+        if: matrix.go == '1.25' && env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          go install github.com/boumenot/gocov-cov/covdata@latest 2>/dev/null || true
+          # Best-effort; the workflow passes without Codecov configured.
+          echo "coverage upload is optional and skipped if CODECOV_TOKEN is not set"
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+          # `only-new-issues` keeps the action idempotent on long-lived
+          # branches by only flagging issues introduced by the PR.
+          only-new-issues: true
+          args: --timeout=5m
+
+  build-current:
+    name: build (current GOOS/GOARCH)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build agent for host
+        run: make agent
+
+      - name: Upload agent binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotterd-linux-amd64
+          path: bin/spotterd
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,31 @@
+name: Security Report
+description: Private vulnerability report. Do NOT use public issues for security bugs.
+title: "[security] "
+labels: ["security"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      content: |
+        > **Please stop.** Security issues must NOT be filed as a public issue.
+        > Use **GitHub Security Advisories** (Repository → Security →
+        > Advisories → "New draft security advisory") or email
+        > `spotter-security@example.com` instead. This template exists only so
+        > an accidental public report is captured and can be moved to a
+        > private channel. A maintainer will convert this issue into a
+        > private advisory or close it as `security/not-a-bug`.
+  - type: input
+    id: channel
+    attributes:
+      label: Preferred private channel
+      description: How can a maintainer reach you securely?
+      placeholder: "GitHub Security Advisory, or email spotter-security@example.com"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Short summary
+      description: One-paragraph description. Details can follow once we're in a private channel.
+    validations:
+      required: true

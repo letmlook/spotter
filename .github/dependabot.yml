@@ -1,0 +1,67 @@
+# Dependabot configuration — keep PR noise low.
+# Spotter has two distinct dependency surfaces:
+#   - Go modules (top-level go.mod / go.sum)
+#   - npm packages (frontend/package.json + package-lock.json)
+# We pull in OS packages indirectly only via systemd / sshpass / PuTTY on
+# operator machines; those are documented in README.md and not tracked here.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # Roll minor/patch Go + indirect deps together so PRs stay readable.
+      name: "Go (minor + patch)"
+      patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "go"
+    # Bump the major floor for the few libraries that follow semver strictly
+    # and would force a protocol or wails-options migration (wails, echo).
+    ignore:
+      - dependency-name: "github.com/wailsapp/wails/v2"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "github.com/labstack/echo/v4"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "mondow"
+    open-pull-requests-limit: 5
+    groups:
+      name: "Frontend (minor + patch)"
+      patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "frontend"
+    # React 18 → 19 is a manual jump; Ant Design majors are coordinated with
+    # their own release notes.
+    ignore:
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "antd"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions: pin to digest, but Dependabot's GitHub Actions support
+  # does the right thing automatically.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "mondow"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"

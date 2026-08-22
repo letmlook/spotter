@@ -1,0 +1,76 @@
+name: Device / platform support
+description: Request or confirm support for a specific Linux distribution, SBC, or Jetson SKU.
+title: "[platform] "
+labels: ["platform-support", "needs-triage"]
+assignees: []
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Vendor, model, marketing name.
+      placeholder: "NVIDIA Jetson Orin Nano 8GB"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS image
+      description: Distro + version, exact string from `cat /etc/os-release` or JetPack release notes.
+      placeholder: "Ubuntu 22.04 (JetPack 6.0)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Architecture
+      options:
+        - aarch64 / arm64
+        - x86_64 / amd64
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      options:
+        - Works out of the box (the agent installed and ran successfully)
+        - Works with manual tweaks (describe in notes)
+        - Doesn't work — please investigate
+    validations:
+      required: true
+
+  - type: dropdown
+    id: collector
+    attributes:
+      label: Which collector(s) are you using?
+      description: Jetson telemetry only works on Jetson boards; basic / network work everywhere.
+      options:
+        - basic_linux (works on any systemd box)
+        - jetson_linux (Jetson only)
+        - network_linux (any box)
+        - Not sure
+      multiple: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything we should know — fan curves, power modes, custom services, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output of `systemctl status spotterd`, `journalctl -u spotterd -n 200`.
+      render: shell
+    validations:
+      required: false

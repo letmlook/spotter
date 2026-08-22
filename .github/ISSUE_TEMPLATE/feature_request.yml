@@ -1,0 +1,70 @@
+name: Feature Request
+description: Propose a new capability for Spotter.
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - spotter-client (GUI)
+        - spotterd agent
+        - Discovery / scanner
+        - Collectors (basic / jetson / network)
+        - Wire protocol
+        - Build / release tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What pain point does this solve? Phrase it without naming the solution.
+      placeholder: |
+        Today, when an agent is rebooted it loses its registry membership on the
+        client for ~30 s until the next poll cycle recovers it. Operators expect
+        the client to keep showing the device as "last seen 5 s ago" so they can
+        tell at a glance whether the reboot was clean.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Your preferred shape. If you have alternatives, mention them in the next field.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you weigh? What are the trade-offs?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: How do you want to contribute?
+      options:
+        - I'd like to implement this myself (PR welcome)
+        - Just discussing — please pick this up
+        - I'll help test
+        - Not sure yet
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope notes
+      options:
+        - label: This breaks the wire protocol (`/api/v1/info` or UDP packet shape).
+        - label: This requires a new dependency.
+        - label: This touches both the agent and the client.

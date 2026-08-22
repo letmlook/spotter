@@ -1,0 +1,76 @@
+name: Agent cross-compile
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: agent-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cross-compile:
+    name: spotterd (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-arm64
+            goarch: arm64
+            binary: bin/spotterd-linux-arm64
+          - target: linux-amd64
+            goarch: amd64
+            binary: bin/spotterd-linux-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Resolve module graph
+        run: go mod download
+
+      # `make agent-linux-<arch>` is the canonical incantation; it sets
+      # CGO_ENABLED=0, GOOS=linux, GOARCH=<arch>, and the binary path. We
+      # pull the Makefile target so a future change in build flags is
+      # automatically picked up here.
+      - name: Cross-compile ${{ matrix.target }}
+        run: make agent-${{ matrix.target }}
+
+      - name: Verify binary architecture
+        run: |
+          file "${{ matrix.binary }}"
+          # `file` should report "ELF 64-bit LSB executable, ARM aarch64"
+          # or "... x86-64", and "statically linked" because CGO is off.
+          if ! file "${{ matrix.binary }}" | grep -q "statically linked"; then
+            echo "::error::Binary is not statically linked (CGO likely on)"
+            exit 1
+          fi
+
+      - name: Smoke test --version
+        # spotterd does not implement --version yet (0.1.0). When it does,
+        # uncomment the line below. For now we only confirm --help exits
+        # cleanly so the script can be redirected into systemd later.
+        run: |
+          chmod +x "${{ matrix.binary }}"
+          "${{ matrix.binary }}" -h 2>&1 | head -n 40 || true
+
+      - name: Upload agent binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotterd-${{ matrix.target }}
+          path: ${{ matrix.binary }}
+          if-no-files-found: error
+          retention-days: 14

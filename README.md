@@ -182,4 +182,30 @@ GUI 客户端通过 UDP 组播（或手动子网扫描 / 按 IP 添加）发现�
 
 ## 架构设计
 
-详见 [`docs/superpowers/specs/2026-08-21-spotter-design.md`](docs/superpowers/specs/2026-08-21-spotter-design.md)。
+完整的设计说明见 [`docs/superpowers/specs/2026-08-21-spotter-design.md`](docs/superpowers/specs/2026-08-21-spotter-design.md)；组件与包结构的精炼总结见 [`docs/architecture.md`](docs/architecture.md)。
+
+## 文档导航
+
+中文版是默认文档，英文版以 `.en.md` 后缀提供。
+
+| 文档                                              | 适用读者     | 内容                                                         |
+|--------------------------------------------------|------------|--------------------------------------------------------------|
+| [README.md](README.md) / [README.en.md](README.en.md) | 所有人    | 项目入口、构建矩阵、部署脚本。                              |
+| [docs/architecture.md](docs/architecture.md) / [.en](docs/architecture.en.md) | 开发者     | 组件与包结构、为什么拆成两个二进制、配置来源一览。          |
+| [docs/operations.md](docs/operations.md) / [.en](docs/operations.en.md) | 运维       | 设备与客户端的文件布局、配置项、日常任务、升级流程。         |
+| [docs/troubleshooting.md](docs/troubleshooting.md) / [.en](docs/troubleshooting.en.md) | 排障       | 按症状划分的 10 条常见故障与对应处置。                       |
+| [docs/faq.md](docs/faq.md) / [.en](docs/faq.en.md) | 所有人     | 许可证选择、网络要求、构建产物等常见问答。                   |
+| [docs/api.md](docs/api.md) / [.en](docs/api.en.md) | 集成者     | `/api/v1/info`、`/healthz` 与 UDP 多播包的字段级规范。       |
+| [CONTRIBUTING.md](CONTRIBUTING.md) / [.en](CONTRIBUTING.en.md) | 贡献者 | 开发环境、提交规范、新增 collector / 组件的步骤。            |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) / [.en](CODE_OF_CONDUCT.en.md) | 贡献者 | 社区行为准则（Contributor Covenant v2.1）。                   |
+| [SECURITY.md](SECURITY.md) / [.en](SECURITY.en.md) | 报告者     | 漏洞报告渠道、版本支持矩阵、加固 checklist。                |
+| [CHANGELOG.md](CHANGELOG.md) / [.en](CHANGELOG.en.md) | 所有人   | 版本变更历史（Keep a Changelog 格式）。                     |
+| [LICENSE](LICENSE)                                | 所有人     | MIT License（Copyright © 2026 Spotter Dev）。                |
+
+## 项目元数据
+
+- `.github/ISSUE_TEMPLATE/`：Bug 报告、功能请求、设备平台支持、提问、安全报告五种模板。
+- `.github/PULL_REQUEST_TEMPLATE.md`：提交 PR 时的自检清单。
+- `.github/workflows/`：`go.yml`（Go 测试 + lint）、`frontend.yml`（前端 build + typecheck）、`agent-build.yml`（设备端 arm64 / amd64 交叉编译）、`release.yml`（tag 触发的全量构建与 GitHub Release 发布）。
+- `.github/dependabot.yml`：Go / npm / GitHub Actions 依赖每周自动升级策略。
+- `.golangci.yml`：golangci-lint v1.59+ 的启用规则集合。

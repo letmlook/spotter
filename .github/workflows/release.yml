@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Skip publishing a GitHub Release (still builds and uploads artifacts)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build artefacts
+    # Tag pushes and manual dispatches, no PR runs.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: agent-arm64
+            label: spotterd (linux/arm64)
+            runs-on: ubuntu-latest
+            build: agent-linux-arm64
+            artifact_name: spotterd-linux-arm64
+            artifact_path: bin/spotterd-linux-arm64
+          - id: agent-amd64
+            label: spotterd (linux/amd64)
+            runs-on: ubuntu-latest
+            build: agent-linux-x64
+            artifact_name: spotterd-linux-x64
+            artifact_path: bin/spotterd-linux-x64
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          cd frontend
+          npm ci --no-audit --fund=false
+
+      - name: Build ${{ matrix.label }}
+        run: make ${{ matrix.build }}
+
+      - name: Upload ${{ matrix.artifact_name }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # Client builds require Wails, which needs libgtk-3, libwebkit2gtk, etc.
+  # on the host. The Wails team publishes a container image with these
+  # pre-baked that we lean on directly.
+  client-linux:
+    name: client (linux)
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/wailsapp/wails:v2.9.2
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build client with Wails
+        working-directory: ${{ github.workspace }}
+        run: |
+          wails build -clean -platform linux/amd64 -o spotter-client
+          chmod +x build/bin/spotter-client
+
+      - name: Upload spotter-client-linux-amd64
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotter-client-linux-amd64
+          path: build/bin/spotter-client
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: release
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')
+    needs: [build, client-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Show artifact layout
+        run: find dist -maxdepth 3 -type f -print
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          # Walk every file (no subdir recursion — wails) and emit
+          # "<sha>  <relative-path>" lines.
+          sha256sum -- * 2>/dev/null > SHA256SUMS || true
+          # If for some reason there are nested dirs, do a full walk too.
+          find . -type f -not -name SHA256SUMS -exec sha256sum {} \; >> SHA256SUMS
+          sort -u SHA256SUMS -o SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          # Wails-built macOS / Windows clients are produced on those
+          # hosts by release engineers (see README "全平台打包" section)
+          # and uploaded here as binary uploads. The workflow itself does
+          # not attempt to build them; doing so requires per-OS runners.
+          files: |
+            dist/spotterd-linux-arm64
+            dist/spotterd-linux-x64
+            dist/spotter-client-linux-amd64
+            dist/SHA256SUMS
+          fail_on_unmatched_files: false

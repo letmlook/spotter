@@ -1,0 +1,99 @@
+name: Bug Report
+description: Report something that doesn't work as documented.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+assignees: []
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component is affected?
+      description: >-
+        Spotter has two binaries (agent / client) and a handful of internal
+        services. Pick the closest match so the right person picks it up.
+      options:
+        - spotterd agent (Linux device)
+        - spotter-client GUI (desktop)
+        - Discovery / scanner pipeline (UDP mcast, registry poll, subnet scan)
+        - Install / deploy scripts (install.sh, deploy.sh, deploy.ps1)
+        - Frontend (React UI, i18n, theming)
+        - Documentation (README, docs/)
+        - Release / build pipeline (Makefile, scripts/build-all.sh)
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: >-
+        Run the following and paste the output:
+
+        `uname -a`, `cat /etc/os-release`,
+        `journalctl -u spotterd --no-pager | tail -n 50` on the device, and
+        the About dialog from the client.
+      placeholder: "agent 0.1.0 on Jetson Orin, Ubuntu 22.04 / client 0.1.0 on macOS 14"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list of commands or UI clicks, smallest possible.
+      placeholder: |
+        1. Build the agent via `make agent-linux-arm64`
+        2. SCP to the device and run `sudo bash /tmp/install.sh`
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: false
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened, including exact error text.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Anything from `journalctl -u spotterd`, the client's
+        `~/.config/Spotter/logs/spotter.log`, browser devtools console, etc.
+        Paste inline or attach a file using the next field.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: network
+    attributes:
+      label: Network topology (optional)
+      description: >-
+        Briefly: are agent and client on the same VLAN / L2 broadcast
+        domain, or is there a router between them? This is critical for
+        discovery-related bugs.
+      placeholder: "Same VLAN, single switch, no firewall between agent and client."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Self-checks
+      description: Confirm you've done the obvious homework — this saves a back-and-forth.
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+        - label: I reproduced the bug on the latest `master`.
+        - label: This is not a security issue (those go to SECURITY.md).

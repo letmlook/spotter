@@ -1,0 +1,65 @@
+# golangci-lint configuration for Spotter.
+# Keep this file thin — adding linters is cheap, but every new one slows CI
+# and increases noise. Re-enable after the codebase has been brought up
+# to the rule (a "make it green then enforce it" pattern).
+run:
+  # CI timeout must be smaller than golangci-lint-action's --timeout.
+  timeout: 4m
+  issues-exit-code: 1
+  tests: true
+
+# Skip third-party and generated code.
+issues:
+  exclude-dirs:
+    - frontend
+    - docs
+    - scripts
+    - build
+  exclude-rules:
+    - path: "_test\\.go$"
+      linters: [gosimple, gomnd]
+    # Generated Wails bindings live under frontend/wailsjs at runtime but
+    # are not part of this module; still, in case they ever show up under
+    # the Go tree, exclude them.
+    - path: "wailsjs/"
+      linters: [all]
+
+linters:
+  disable-all: true
+  enable:
+    - bodyclose        # http.Response.Body Close()
+    - errcheck         # unchecked errs
+    - gofmt            # formatting
+    - goimports        # grouping + import order
+    - gocritic         # opinionated style checks
+    - govet            # built-in vet
+    - ineffassign      # :=
+    - misspell         # common typos in comments
+    - nolintlint       # validate //nolint: directives
+    - prealloc         # for-range copy hint
+    - revive           # golint successor
+    - staticcheck      # staticcheck.io checks
+    - unconvert        # redundant conversions
+    - unused           # dead code
+  # All deprecated linters are off by virtue of `disable-all: true`;
+  # explicitly enable here only after confirming with `golangci-lint linters`.
+
+linters-settings:
+  gocritic:
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+  revive:
+    rules:
+      - name: var-naming
+        severity: warning
+      - name: exported
+        severity: warning
+      - name: error-strings
+        severity: warning
+      - name: error-returned
+        severity: warning
+      - name: error-naming
+        severity: warning
+  goimports:
+    local-prefixes: github.com/spotter/spotter
