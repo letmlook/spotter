@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -41,6 +42,18 @@ var uiFS embed.FS
 //
 //go:embed build/appicon.png
 var appIcon []byte
+
+// Emitter abstracts wailsruntime.EventsEmit so tests can substitute
+// a recording fake without spinning up Wails.
+type Emitter interface {
+	Emit(ctx context.Context, eventName string, data ...interface{})
+}
+
+type wailsEmitter struct{}
+
+func (wailsEmitter) Emit(ctx context.Context, eventName string, data ...interface{}) {
+	wailsruntime.EventsEmit(ctx, eventName, data...)
+}
 
 // listenPort is the device-side HTTP port the agent listens on by
 // default (and the port the client expects when polling).
@@ -75,7 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := NewApp(reg, logger)
+	app := NewApp(reg, logger, wailsEmitter{})
 
 	err = wails.Run(&options.App{
 		Title:  "Spotter",
@@ -120,10 +133,15 @@ func main() {
 
 // App is the Wails-bound object. Frontend calls these methods.
 type App struct {
-	reg     *registry.Registry
-	logger  *slog.Logger
-	scanner *scanner.Scanner
-	ctx     context.Context // injected via OnStartup; pre-initialised to a non-nil placeholder so EventsEmit is safe before Wails starts.
+	reg          *registry.Registry
+	logger       *slog.Logger
+	scanner      *scanner.Scanner
+	emitter      Emitter
+	ctx          context.Context // injected via OnStartup; pre-initialised to a non-nil placeholder so EventsEmit is safe before Wails starts.
+	logStreams   map[string]context.CancelFunc
+	logStreamsMu sync.Mutex
+	// streamFn is the body of StartLogStream; injected for tests.
+	streamFn func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error
 }
 
 // OnStartup is called by Wails; replaces the placeholder ctx with the
@@ -138,12 +156,21 @@ func (a *App) OnStartup(ctx context.Context) {
 // listen with EventsOn. app.ctx is seeded with context.Background()
 // so the very first event from the scanner (which may fire before
 // OnStartup runs) does not dereference a nil ctx.
-func NewApp(reg *registry.Registry, logger *slog.Logger) *App {
-	app := &App{reg: reg, logger: logger, ctx: context.Background()}
+func NewApp(reg *registry.Registry, logger *slog.Logger, emitter Emitter) *App {
+	if emitter == nil {
+		emitter = wailsEmitter{}
+	}
+	app := &App{
+		reg: reg, logger: logger, emitter: emitter,
+		ctx:        context.Background(),
+		logStreams: map[string]context.CancelFunc{},
+	}
 	app.scanner = scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
 		logger.Info("scanner event", slog.String("tag", e.Tag()))
-		wailsruntime.EventsEmit(app.ctx, e.Tag(), e)
+		app.emitter.Emit(app.ctx, e.Tag(), e)
 	}))
+	// streamFn 默认指向 scanner 实现；测试可覆盖。
+	app.streamFn = app.scanner.StreamDeviceLogs
 	return app
 }
 
@@ -394,4 +421,74 @@ func (a *App) powerAction(deviceID string, action string) error {
 		return nil
 	}
 	return err
+}
+
+// StartLogStream begins streaming the device's execution log. Each
+// NDJSON record is emitted as "device-log:{deviceID}" with payload
+// scanner.LogLine. Idempotent for the same deviceID: a second call
+// while a stream is active returns nil and does NOT spawn another
+// goroutine. Errors:
+//
+//   - device not in registry
+//   - device marked offline
+func (a *App) StartLogStream(deviceID string) error {
+	entry, ok := a.reg.Get(deviceID)
+	if !ok {
+		return fmt.Errorf("device not found: %s", deviceID)
+	}
+	if !entry.Online {
+		return fmt.Errorf("device %s is offline", deviceID)
+	}
+	port := entry.Port
+	if port == 0 {
+		port = listenPort
+	}
+
+	a.logStreamsMu.Lock()
+	if _, exists := a.logStreams[deviceID]; exists {
+		a.logStreamsMu.Unlock()
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.logStreams[deviceID] = cancel
+	a.logStreamsMu.Unlock()
+
+	go a.runLogStream(ctx, deviceID, entry.IP, port)
+	return nil
+}
+
+// StopLogStream cancels the active log stream for deviceID. Returns
+// nil even if no stream is active.
+func (a *App) StopLogStream(deviceID string) error {
+	a.logStreamsMu.Lock()
+	defer a.logStreamsMu.Unlock()
+	if cancel, ok := a.logStreams[deviceID]; ok {
+		cancel()
+		delete(a.logStreams, deviceID)
+	}
+	return nil
+}
+
+// runLogStream reads from streamFn and emits each line via the
+// Emitter. On exit (ctx cancel or stream error) it removes the
+// stream from the map and emits "device-log-end:{id}".
+func (a *App) runLogStream(ctx context.Context, deviceID, ip string, port int) {
+	defer func() {
+		a.logStreamsMu.Lock()
+		if c, ok := a.logStreams[deviceID]; ok {
+			c()
+			delete(a.logStreams, deviceID)
+		}
+		a.logStreamsMu.Unlock()
+		a.emitter.Emit(a.ctx, "device-log-end:"+deviceID, true)
+	}()
+	err := a.streamFn(ctx, ip, port, func(line scanner.LogLine) {
+		a.emitter.Emit(a.ctx, "device-log:"+deviceID, line)
+	})
+	if err != nil && !errors.Is(err, context.Canceled) {
+		a.logger.Warn("log stream ended",
+			slog.String("device_id", deviceID),
+			slog.String("err", err.Error()))
+		a.emitter.Emit(a.ctx, "device-log-error:"+deviceID, err.Error())
+	}
 }
