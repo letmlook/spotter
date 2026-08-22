@@ -1,43 +1,23 @@
-# golangci-lint configuration for Spotter.
-# Keep this file thin — adding linters is cheap, but every new one slows CI
-# and increases noise. Re-enable after the codebase has been brought up
-# to the rule (a "make it green then enforce it" pattern).
+# golangci-lint v2 configuration for Spotter.
+# Migration notes: from v1 we used `disable-all: true` + `enable:`; in
+# v2 the equivalent is `default: none`. `linters-settings.<linter>`
+# became `linters.settings.<linter>`. Skip dirs / files moved to
+# `linters.exclusions.paths` (and similarly on the formatters side).
+# Reference: https://golangci-lint.run/product/migration-guide/
 
-# Mandatory `version` field for golangci-lint v2 — without it the v2
-# binary rejects the file with "unsupported version of the
-# configuration" (v1 inferred ""  when reading legacy configs was
-# removed in v2).
 version: "2"
+
 run:
   # CI timeout must be smaller than golangci-lint-action's --timeout.
   timeout: 4m
-  issues-exit-code: 1
   tests: true
 
-# Skip third-party and generated code.
-issues:
-  exclude-dirs:
-    - frontend
-    - docs
-    - scripts
-    - build
-  exclude-rules:
-    - path: "_test\\.go$"
-      linters: [gosimple, gomnd]
-    # Generated Wails bindings live under frontend/wailsjs at runtime but
-    # are not part of this module; still, in case they ever show up under
-    # the Go tree, exclude them.
-    - path: "wailsjs/"
-      linters: [all]
-
 linters:
-  disable-all: true
+  default: none
+
   enable:
     - bodyclose        # http.Response.Body Close()
     - errcheck         # unchecked errs
-    - gofmt            # formatting
-    - goimports        # grouping + import order
-    - gocritic         # opinionated style checks
     - govet            # built-in vet
     - ineffassign      # :=
     - misspell         # common typos in comments
@@ -47,25 +27,29 @@ linters:
     - staticcheck      # staticcheck.io checks
     - unconvert        # redundant conversions
     - unused           # dead code
-  # All deprecated linters are off by virtue of `disable-all: true`;
-  # explicitly enable here only after confirming with `golangci-lint linters`.
 
-linters-settings:
-  gocritic:
-    disabled-checks:
-      - hugeParam
-      - rangeValCopy
-  revive:
-    rules:
-      - name: var-naming
-        severity: warning
-      - name: exported
-        severity: warning
-      - name: error-strings
-        severity: warning
-      - name: error-return
-        severity: warning
-      - name: error-naming
-        severity: warning
-  goimports:
-    local-prefixes: github.com/spotter/spotter
+  settings:
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+    revive:
+      rules:
+        - name: var-naming
+          severity: warning
+        - name: exported
+          severity: warning
+        - name: error-strings
+          severity: warning
+        - name: error-return
+          severity: warning
+        - name: error-naming
+          severity: warning
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/spotter/spotter
