@@ -46,21 +46,24 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      - name: Pre-fetch Go modules (warms GOMODCACHE)
+        run: go mod download -x
+
       # Pin the Wails CLI to match the version in go.mod
       # (`github.com/wailsapp/wails/v2 v2.14.0`). `go install @latest`
-      # from CI has been observed to hang on indirect deps
-      # (`pkg/errors v0.9.1`); pinning + retry makes the cost
-      # reproducible.
+      # has been observed to hang on the indirect `pkg/errors v0.9.1`
+      # download; pinning + goproxy.cn fallback + a warm GOMODCACHE
+      # plus retry makes the cost reproducible.
       - name: Install Wails CLI
         env:
           GOPROXY: https://goproxy.cn,https://proxy.golang.org,direct
         run: |
-          for i in 1 2 3; do
+          for i in 1 2 3 4; do
             if go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0; then
               break
             fi
-            echo "go install wails: retry $i/3"
-            sleep 15
+            echo "go install wails: retry $i/4"
+            sleep 20
           done
           wails version
 
