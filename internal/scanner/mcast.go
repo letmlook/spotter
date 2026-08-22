@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"time"
 
@@ -52,14 +53,20 @@ func (s *Scanner) mcastOnce(ctx context.Context) {
 		return
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
+		s.opts.Logger.Debug("mcast set read deadline", "err", err.Error())
+	}
 
 	hello := protocol.HelloPacket{
 		Type:     "hello",
 		SenderID: s.opts.ClientSenderID,
 		TS:       time.Now().UTC().Format(time.RFC3339),
 	}
-	data, _ := json.Marshal(hello)
+	data, err := json.Marshal(hello)
+	if err != nil {
+		slog.Default().Debug("mcast marshal hello", "err", err.Error())
+		return
+	}
 	if _, err := conn.WriteToUDP(data, addr); err != nil {
 		s.opts.Logger.Debug("mcast write", "err", err.Error())
 		return

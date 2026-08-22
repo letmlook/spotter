@@ -56,7 +56,9 @@ func (a *Agent) udpReadLoop(ctx context.Context, conn *net.UDPConn) {
 			return
 		default:
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
+			a.logger.Debug("set read deadline", slog.String("err", err.Error()))
+		}
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			var ne net.Error

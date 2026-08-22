@@ -88,22 +88,44 @@ func (s *Scanner) probeOne(ctx context.Context, ip net.IP) {
 	d := net.Dialer{Timeout: scanTimeout}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		// Per-host dial failures are routine (only one host per /24 is
+		// likely running spotterd); log at Debug to keep Info-level
+		// scan summaries uncluttered. Non-timeout errors (refused, no
+		// route) bubble up to Info for visibility.
+		if ctx.Err() == nil {
+			s.opts.Logger.Debug("subnet probe dial failed",
+				"ip", ip.String(), "err", err.Error())
+		}
 		return
 	}
-	_ = conn.Close()
+	if err := conn.Close(); err != nil {
+		s.opts.Logger.Debug("subnet probe close failed",
+			"ip", ip.String(), "err", err.Error())
+	}
 
 	url := "http://" + addr + "/api/v1/info"
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		s.opts.Logger.Debug("subnet probe build request failed",
+			"ip", ip.String(), "err", err.Error())
+		return
+	}
 	resp, err := s.opts.HTTPClient.Do(req)
 	if err != nil {
+		s.opts.Logger.Debug("subnet probe HTTP failed",
+			"ip", ip.String(), "err", err.Error())
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
+		s.opts.Logger.Debug("subnet probe non-200",
+			"ip", ip.String(), "code", resp.StatusCode)
 		return
 	}
 	var info protocol.DeviceInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		s.opts.Logger.Warn("subnet probe decode failed",
+			"ip", ip.String(), "err", err.Error())
 		return
 	}
 	s.mergeInfo("subnet", ip.String(), s.opts.DevicePort, info)

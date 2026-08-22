@@ -36,6 +36,15 @@ func (p *pollFailures) reset(deviceID string) {
 	delete(p.counts, deviceID)
 }
 
+// get is a test helper: returns the current fail count and whether
+// the device is tracked. Production code uses bump/reset only.
+func (p *pollFailures) get(deviceID string) (int, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n, ok := p.counts[deviceID]
+	return n, ok
+}
+
 // PollOnce performs one HTTP poll cycle against every registered device.
 func (s *Scanner) PollOnce(ctx context.Context) error {
 	entries := s.reg.List()
@@ -104,7 +113,9 @@ func (s *Scanner) pollLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_ = s.PollOnce(ctx)
+			if err := s.PollOnce(ctx); err != nil {
+				s.opts.Logger.Debug("poll loop tick failed", "err", err.Error())
+			}
 		}
 	}
 }

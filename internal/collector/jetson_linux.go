@@ -5,6 +5,7 @@ package collector
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,10 +54,29 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 	}
 
 	// Step 4: CUDA/cuDNN/TensorRT from root-scoped /usr/local/cuda
+	// version.json. The schema is documented at NVIDIA's CUDA repo;
+	// we parse just the version strings since those are what the GUI
+	// surfaces.
 	if c := readFile(root + "/usr/local/cuda/version.json"); c != "" {
-		// best-effort; just mark found=true if file exists
-		found = true
-		_ = c
+		var v struct {
+			CUDA     struct{ Version string `json:"version"` } `json:"cuda"`
+			CUDNN    struct{ Version string `json:"version"` } `json:"cudnn"`
+			TensorRT struct{ Version string `json:"version"` } `json:"tensorrt"`
+		}
+		if err := json.Unmarshal([]byte(c), &v); err == nil {
+			if v.CUDA.Version != "" {
+				info.CUDA = v.CUDA.Version
+				found = true
+			}
+			if v.CUDNN.Version != "" {
+				info.CUDNN = v.CUDNN.Version
+				found = true
+			}
+			if v.TensorRT.Version != "" {
+				info.TensorRT = v.TensorRT.Version
+				found = true
+			}
+		}
 	}
 
 	if !found {

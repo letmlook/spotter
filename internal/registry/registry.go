@@ -1,5 +1,7 @@
 // Package registry persists the client's view of deployed devices to a
-// local JSON file. All mutations are flushed immediately.
+// local JSON file. All mutations are flushed immediately and broadcast
+// to subscribers so in-process caches (e.g. scanner's pollFailures) can
+// stay consistent with on-disk state without polling.
 package registry
 
 import (
@@ -8,11 +10,35 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
 )
+
+// MutationOp identifies the kind of change that produced a MutationEvent.
+type MutationOp string
+
+const (
+	OpAdd    MutationOp = "add"
+	OpUpdate MutationOp = "update"
+	OpRemove MutationOp = "remove"
+)
+
+// MutationEvent is broadcast to subscribers after every mutation.
+// Subscription is non-blocking: a slow consumer drops events rather
+// than blocking mutation flushes.
+type MutationEvent struct {
+	Op       MutationOp
+	DeviceID string
+}
+
+// defaultSubscriberBuffer is the per-subscriber channel depth. Sized
+// to absorb short bursts (a ClearRegistry that removes N devices
+// triggers N Remove events); older code paths (single Add/Update) sit
+// well below it.
+const defaultSubscriberBuffer = 64
 
 // Entry is a row in devices.json. Includes last-known runtime info
 // (LastInfo) so the UI can render offline devices' last known state.
@@ -33,6 +59,8 @@ type Registry struct {
 	path    string
 	mu      sync.Mutex
 	entries map[string]*Entry
+	subMu   sync.Mutex
+	subs    []chan<- MutationEvent
 }
 
 // Open loads (or initializes) a registry at path. If the file is
@@ -52,17 +80,55 @@ func Open(path string) (*Registry, error) {
 	}
 	if err := json.Unmarshal(data, &r.entries); err != nil {
 		backup := fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixNano())
-		_ = os.WriteFile(backup, data, 0644)
+		// Best-effort backup; non-fatal so Open can still return a usable
+		// empty registry. The registry package avoids slog (the only
+		// consumer is the client) and falls back to stderr if even the
+		// backup write fails.
+		if writeErr := os.WriteFile(backup, data, 0600); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "registry: corrupt backup %s failed: %v\n", backup, writeErr)
+		}
 		// Start fresh.
 		r.entries = map[string]*Entry{}
-		// Best-effort: rewrite the bad file as empty so future opens are clean.
-		_ = os.WriteFile(path, []byte("{}"), 0644)
+		// Rewrite the bad file as empty so future opens are clean. A
+		// failure here is also non-fatal.
+		if writeErr := os.WriteFile(path, []byte("{}"), 0600); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "registry: reset corrupt %s failed: %v\n", path, writeErr)
+		}
 		return r, nil
 	}
 	if r.entries == nil {
 		r.entries = map[string]*Entry{}
 	}
 	return r, nil
+}
+
+// Subscribe returns a buffered channel that receives a MutationEvent
+// after every successful Add/Update/Remove. The Registry holds a
+// reference to ch; callers must consume or the channel will eventually
+// fill (events then drop). Cancel by closing the channel is not
+// supported — instead use the returned channel in a select that exits
+// when the registry itself goes out of scope.
+func (r *Registry) Subscribe() <-chan MutationEvent {
+	r.subMu.Lock()
+	defer r.subMu.Unlock()
+	ch := make(chan MutationEvent, defaultSubscriberBuffer)
+	r.subs = append(r.subs, ch)
+	return ch
+}
+
+func (r *Registry) broadcastLocked(ev MutationEvent) {
+	r.subMu.Lock()
+	subs := make([]chan<- MutationEvent, len(r.subs))
+	copy(subs, r.subs)
+	r.subMu.Unlock()
+	for _, ch := range subs {
+		select {
+		case ch <- ev:
+		default:
+			// Drop on slow consumer; the next mutation will surface state
+			// again when the consumer catches up.
+		}
+	}
 }
 
 // Add inserts a new entry. Errors if device_id already exists.
@@ -73,15 +139,28 @@ func (r *Registry) Add(e Entry) error {
 		return fmt.Errorf("device %q already in registry", e.DeviceID)
 	}
 	r.entries[e.DeviceID] = &e
-	return r.flushLocked()
+	if err := r.flushLocked(); err != nil {
+		return err
+	}
+	r.broadcastLocked(MutationEvent{Op: OpAdd, DeviceID: e.DeviceID})
+	return nil
 }
 
-// Remove deletes an entry by device_id.
+// Remove deletes an entry by device_id. Removing a non-existent entry
+// is a no-op (no error), so callers can pass device_ids retrieved from
+// a stale snapshot.
 func (r *Registry) Remove(deviceID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.entries[deviceID]; !ok {
+		return nil
+	}
 	delete(r.entries, deviceID)
-	return r.flushLocked()
+	if err := r.flushLocked(); err != nil {
+		return err
+	}
+	r.broadcastLocked(MutationEvent{Op: OpRemove, DeviceID: deviceID})
+	return nil
 }
 
 // Update applies mutator to the entry identified by deviceID.
@@ -93,7 +172,11 @@ func (r *Registry) Update(deviceID string, mut func(*Entry)) error {
 		return fmt.Errorf("device %q not found", deviceID)
 	}
 	mut(e)
-	return r.flushLocked()
+	if err := r.flushLocked(); err != nil {
+		return err
+	}
+	r.broadcastLocked(MutationEvent{Op: OpUpdate, DeviceID: deviceID})
+	return nil
 }
 
 // Get returns a copy of the entry.
@@ -130,17 +213,40 @@ func (r *Registry) List() []Entry {
 	return out
 }
 
-// Close releases any held resources. Currently a no-op (kept for API
-// stability and future file locking).
-func (r *Registry) Close() error { return nil }
+// Close releases any held resources and signals subscribers to exit.
+// All Subscribe channels returned by Open are closed by Close, so a
+// Scanner's watchRegistry goroutine exits cleanly. Idempotent.
+func (r *Registry) Close() error {
+	r.subMu.Lock()
+	defer r.subMu.Unlock()
+	for _, ch := range r.subs {
+		close(ch)
+	}
+	r.subs = nil
+	return nil
+}
 
 func (r *Registry) flushLocked() error {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(r.entries, "", "  ")
+	// Marshal a key-sorted projection so devices.json content is stable
+	// across writes (Go map iteration order is randomised). The
+	// returned slice wraps the original pointer values; the alternative
+	// of marshalling r.entries directly would diff unnecessarily on
+	// every flush.
+	keys := make([]string, 0, len(r.entries))
+	for k := range r.entries {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	ordered := make(map[string]*Entry, len(r.entries))
+	for _, k := range keys {
+		ordered[k] = r.entries[k]
+	}
+	data, err := json.MarshalIndent(ordered, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.path, data, 0644)
+	return os.WriteFile(r.path, data, 0600)
 }

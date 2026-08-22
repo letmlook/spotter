@@ -1,9 +1,12 @@
 package registry_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
@@ -97,4 +100,148 @@ func TestRegistryRemove(t *testing.T) {
 
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func TestRegistrySubscribe_AddUpdateRemove(t *testing.T) {
+	dir := t.TempDir()
+	r, err := registry.Open(filepath.Join(dir, "devices.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := r.Subscribe()
+
+	if err := r.Add(registry.Entry{DeviceID: "a", IP: "10.0.0.1", Port: 9999}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Update("a", func(e *registry.Entry) { e.Online = true }); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Remove("a"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []registry.MutationOp{registry.OpAdd, registry.OpUpdate, registry.OpRemove}
+	for i, op := range want {
+		select {
+		case ev := <-ch:
+			if ev.Op != op || ev.DeviceID != "a" {
+				t.Errorf("event %d: op=%s device=%s, want op=%s device=a", i, ev.Op, ev.DeviceID, op)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timeout waiting for event %d", i)
+		}
+	}
+}
+
+func TestRegistrySubscribe_DropOnSlowConsumer(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := registry.Open(filepath.Join(dir, "devices.json"))
+	ch := r.Subscribe()
+	// Fill past the default buffer: the channel has capacity 64, so 65
+	// back-to-back mutations must drop at least one without blocking.
+	for i := 0; i < 100; i++ {
+		if err := r.Add(registry.Entry{DeviceID: fmt.Sprintf("d%d", i), IP: "10.0.0.1"}); err != nil {
+			t.Fatalf("add %d: %v", i, err)
+		}
+	}
+	// Drain in non-blocking fashion and confirm we got "some" but not "all".
+	got := 0
+	for {
+		select {
+		case <-ch:
+			got++
+		default:
+			if got >= 64 && got < 100 {
+				return
+			}
+			t.Fatalf("unexpected drain count %d (want 64..99)", got)
+		}
+	}
+}
+
+func TestRegistryFlushOrderStable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devices.json")
+	r, _ := registry.Open(path)
+
+	// Insert in non-sorted order; flush output must still serialise
+	// keys lexicographically so devices.json does not flap on every
+	// write.
+	for _, id := range []string{"c", "a", "b"} {
+		if err := r.Add(registry.Entry{DeviceID: id, IP: "10.0.0.1", Port: 9999}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	ia := strings.Index(content, `"a"`)
+	ib := strings.Index(content, `"b"`)
+	ic := strings.Index(content, `"c"`)
+	if ia < 0 || ib < 0 || ic < 0 {
+		t.Fatalf("expected all keys in flush output, got %q", content)
+	}
+	if !(ia < ib && ib < ic) {
+		t.Fatalf("flush not key-sorted: a=%d b=%d c=%d\n%s", ia, ib, ic, content)
+	}
+}
+
+func TestRegistryFlushOrderStable_AcrossReopens(t *testing.T) {
+	// Add three devices, close, reopen. Subsequent Update should NOT
+	// reorder keys on disk.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devices.json")
+	r, _ := registry.Open(path)
+	for _, id := range []string{"b", "a", "c"} {
+		_ = r.Add(registry.Entry{DeviceID: id, IP: "10.0.0.1", Port: 9999})
+	}
+	r.Close()
+
+	r2, _ := registry.Open(path)
+	if err := r2.Update("b", func(e *registry.Entry) { e.Online = true }); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	ia := strings.Index(content, `"a"`)
+	ib := strings.Index(content, `"b"`)
+	ic := strings.Index(content, `"c"`)
+	if !(ia < ib && ib < ic) {
+		t.Fatalf("reopen+update broke sort: a=%d b=%d c=%d\n%s", ia, ib, ic, content)
+	}
+}
+
+func TestRegistryRemove_NoEntryIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := registry.Open(filepath.Join(dir, "devices.json"))
+	// No row to remove; ClearRegistry-style flows iterate List() and
+	// remove each by id — must not error.
+	if err := r.Remove("nonexistent"); err != nil {
+		t.Fatalf("remove nonexistent should be no-op: %v", err)
+	}
+}
+
+func TestRegistryCorruptRecovery_LogsButContinues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(path, []byte("not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := registry.Open(path)
+	if err != nil {
+		t.Fatalf("expected silent recovery, got: %v", err)
+	}
+	if got := r.List(); len(got) != 0 {
+		t.Errorf("expected empty after recovery, got %d entries", len(got))
+	}
+	// After recovery, the file should have been rewritten to "{}".
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "{}" {
+		t.Errorf("expected reset file content %q, got %q", "{}", string(data))
+	}
 }

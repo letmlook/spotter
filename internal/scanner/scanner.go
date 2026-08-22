@@ -120,13 +120,34 @@ type Scanner struct {
 	failTrack *pollFailures
 }
 
-// New creates a Scanner.
+// New creates a Scanner and starts a goroutine that mirrors registry
+// mutations into its own pollFailures tracker. Without this watcher,
+// ClearRegistry would leave stale failure counts: the next PollOnce
+// after a clear would still see the device in the registry-poll
+// source, but with a count that may already exceed the offline
+// threshold.
 func New(reg *registry.Registry, optFns ...func(*Options)) *Scanner {
 	opts := Options{}.withDefaults()
 	for _, fn := range optFns {
 		fn(&opts)
 	}
-	return &Scanner{reg: reg, opts: opts, failTrack: newPollFailures(3)}
+	s := &Scanner{reg: reg, opts: opts, failTrack: newPollFailures(3)}
+	go s.watchRegistry(reg.Subscribe())
+	return s
+}
+
+// watchRegistry consumes MutationEvents from ch and resets
+// pollFailures counts for removed devices. Runs for the lifetime of
+// the Scanner.
+func (s *Scanner) watchRegistry(ch <-chan registry.MutationEvent) {
+	for ev := range ch {
+		switch ev.Op {
+		case registry.OpRemove:
+			s.failTrack.reset(ev.DeviceID)
+			s.opts.Logger.Debug("scan: registry cleared device, reset fail count",
+				slog.String("device", ev.DeviceID))
+		}
+	}
 }
 
 func (s *Scanner) emit(e Event) {

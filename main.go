@@ -360,7 +360,10 @@ func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = a.scanner.PollOnce(ctx)
+		if err := a.scanner.PollOnce(ctx); err != nil {
+			a.logger.Debug("immediate poll after accept failed",
+				slog.String("err", err.Error()))
+		}
 	}()
 	return e, nil
 }

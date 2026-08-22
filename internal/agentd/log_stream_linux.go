@@ -5,6 +5,7 @@ package agentd
 import (
 	"context"
 	"io"
+	"log/slog"
 	"os/exec"
 	"strconv"
 )
@@ -28,10 +29,18 @@ var startJournalctl = func(ctx context.Context, unit string, tail int) (io.ReadC
 	}
 	kill := func() {
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			if err := cmd.Process.Kill(); err != nil {
+				slog.Default().Debug("journalctl kill failed",
+					"err", err.Error())
+			}
 		}
 		// 回收 Wait，防止僵尸；异步避免阻塞 kill 调用方。
-		go func() { _ = cmd.Wait() }()
+		go func() {
+			if err := cmd.Wait(); err != nil {
+				slog.Default().Debug("journalctl wait failed",
+					"err", err.Error())
+			}
+		}()
 	}
 	return stdout, kill, nil
 }

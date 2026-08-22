@@ -40,7 +40,9 @@ func (a *Agent) Handler() http.Handler {
 func (a *Agent) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
+	if _, err := w.Write([]byte("ok")); err != nil {
+		a.logger.Debug("write healthz", slog.String("err", err.Error()))
+	}
 }
 
 func (a *Agent) handleInfo(w http.ResponseWriter, _ *http.Request) {
@@ -63,9 +65,11 @@ func (a *Agent) handlePowerAction(action string) http.HandlerFunc {
 		if !a.cfg.EnablePowerActions {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			if err := json.NewEncoder(w).Encode(map[string]string{
 				"error": "power actions disabled",
-			})
+			}); err != nil {
+				a.logger.Debug("encode power disabled", slog.String("err", err.Error()))
+			}
 			return
 		}
 		if err := ExecSystemctl(action); err != nil {
@@ -74,16 +78,20 @@ func (a *Agent) handlePowerAction(action string) http.HandlerFunc {
 				slog.String("err", err.Error()))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}); err != nil {
+				a.logger.Debug("encode power error", slog.String("err", err.Error()))
+			}
 			return
 		}
 		a.logger.Info("power action scheduled", slog.String("action", action))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status": "scheduled",
 			"action": action,
-		})
+		}); err != nil {
+			a.logger.Debug("encode power ack", slog.String("err", err.Error()))
+		}
 	}
 }
 
@@ -223,7 +231,9 @@ func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
 			slog.String("err", err.Error()))
 		// 已 WriteHeader(200)；写一行 error 后关闭流，让客户端 reader
 		// 解析失败 → UI 显示错误。
-		_, _ = io.WriteString(w, `{"error":"journalctl not available"}`+"\n")
+		if _, werr := io.WriteString(w, `{"error":"journalctl not available"}`+"\n"); werr != nil {
+			a.logger.Debug("write journalctl-error ndjson", slog.String("err", werr.Error()))
+		}
 		flusher.Flush()
 		return
 	}

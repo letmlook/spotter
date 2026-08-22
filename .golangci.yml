@@ -1,10 +1,12 @@
 # golangci-lint v2 configuration for Spotter.
 #
-# Lint set is intentionally minimal during 0.x. We run formatter
-# checks (gofmt / goimports) on every PR, but skip the heavier code-
-# review linters (errcheck, revive, staticcheck, etc.) until the
-# codebase grows proper nolint hygiene. To opt a linter back in,
-# add it to `linters.enable` and fix whatever it surfaces.
+# v0.2.0 — opt the foundational linters back in now that the worst
+# `_ = err` patterns have been retired (see commit history). They run
+# on every PR; new offenders must use a justification comment:
+#
+#     _ = someFn() //nolint:errcheck // short-lived loop tick, log later
+#
+# Anything beyond these is opt-in per-PPR as the project grows.
 #
 # Reference: https://golangci-lint.run/product/migration-guide/
 
@@ -17,9 +19,9 @@ run:
 
 linters:
   default: none
-  # Nothing enabled here on purpose — gofmt / goimports moved to the
-  # `formatters` block below per v2 schema. Re-enable linters as the
-  # codebase stabilises.
+  enable:
+    - errcheck
+    - govet
 
 formatters:
   enable:
