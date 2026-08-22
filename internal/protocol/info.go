@@ -4,14 +4,15 @@ package protocol
 // HELLO-REPLY UDP packets. Field tags MUST match the wire contract in
 // docs/superpowers/specs/2026-08-21-spotter-design.md §6.1.
 type DeviceInfo struct {
-	SchemaVersion int         `json:"schema_version"`
-	DeviceID      string      `json:"device_id"`
-	CollectedAt   string      `json:"collected_at"`
-	AgentVersion  string      `json:"agent_version"`
-	Basic         BasicInfo   `json:"basic"`
-	Network       NetworkInfo `json:"network"`
-	Jetson        *JetsonInfo `json:"jetson"`            // nil means "not a Jetson" or probe failed
-	Auth          *AuthInfo   `json:"auth,omitempty"`    // v2: present iff the agent has [auth] enabled
+	SchemaVersion  int             `json:"schema_version"`
+	DeviceID       string          `json:"device_id"`
+	CollectedAt    string          `json:"collected_at"`
+	AgentVersion   string          `json:"agent_version"`
+	Basic          BasicInfo       `json:"basic"`
+	Network        NetworkInfo     `json:"network"`
+	Jetson         *JetsonInfo     `json:"jetson"`               // nil means "not a Jetson" or probe failed
+	Auth           *AuthInfo       `json:"auth,omitempty"`       // v2: present iff the agent has [auth] enabled
+	LastHeartbeatAt LastHeartbeatAt `json:"last_heartbeat_at"`    // v3: timestamp of last heartbeat
 }
 
 type BasicInfo struct {
@@ -58,3 +59,9 @@ type JetsonInfo struct {
 type AuthInfo struct {
 	Required bool `json:"required"` // when true, /api/v1/{reboot,shutdown,logs} demand a Bearer token
 }
+
+// LastHeartbeatAt is the timestamp of the most recent agent heartbeat
+// (a log line in v0.1, /api/v1/heartbeat on demand in v0.3 — see
+// agentd/agent.go). Clients show "心跳 Xs 前" based on this field;
+// values older than 5 min trigger the "agent idle" warning state.
+type LastHeartbeatAt string

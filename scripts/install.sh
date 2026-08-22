@@ -27,6 +27,21 @@ mkdir -p "$CONFIG_DIR"
 
 DEVICE_ID="${DEVICE_ID:-$(cat /proc/sys/kernel/random/uuid)}"
 
+# Generate a per-device bearer token when auth is enabled (the
+# default since v0.3). The token is saved to agent.toml with
+# 0600 permissions and echoed on stdout so the GUI client can
+# prompt the user to copy it into Settings → Auth tokens.
+AUTH_TOKEN="${AUTH_TOKEN:-}"
+if [[ -z "$AUTH_TOKEN" ]]; then
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    AUTH_TOKEN="$(cat /proc/sys/kernel/random/uuid)"
+  else
+    AUTH_TOKEN="$(awk 'BEGIN { srand(); printf "spotter-%08x-%04x-%04x-%04x-%012x\n", \
+        rand()*4294967295, rand()*65535, rand()*65535, \
+        rand()*65535, rand()*281474976710655 }')"
+  fi
+fi
+
 cat >"$CONFIG_DIR/agent.toml" <<EOF
 device_id = "$DEVICE_ID"
 listen_addr = "0.0.0.0:9999"
@@ -36,7 +51,13 @@ enable_power_actions = true
 enable_log_stream = true
 log_unit = "spotterd.service"
 hello_interval = "5s"
+
+[auth]
+enabled = true
+token = "$AUTH_TOKEN"
 EOF
+
+chmod 0600 "$CONFIG_DIR/agent.toml"
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 systemctl daemon-reload
@@ -51,3 +72,11 @@ if ! systemctl is-active --quiet spotterd; then
 fi
 
 echo "DEVICE_ID=$DEVICE_ID"
+echo "AUTH_TOKEN=$AUTH_TOKEN"
+echo
+echo "✔ Saved $CONFIG_DIR/agent.toml (mode 0600, owned by root:root)."
+echo "✔ spotterd.service is active."
+echo
+echo "Next: paste the AUTH_TOKEN above into the Spotter client"
+echo "      Settings → Auth tokens. The token cannot be retrieved"
+echo "      later from the agent."

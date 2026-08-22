@@ -21,6 +21,8 @@ type Config struct {
 	LogUnit            string        // journalctl -u unit name; default "spotterd.service"
 	HelloInterval      time.Duration // proactive HELLO cadence; default 5s (see udp.go)
 	Auth               AuthConfig    // opt-in: when Enabled, all non-/healthz endpoints demand Bearer token
+	Server             ServerConfig  // server-level knobs (timeouts + rate limits)
+	Logs               LogsConfig    // log streaming knobs (unit + tail clamps)
 }
 
 // AuthConfig is the [auth] TOML section. When Enabled is true the
@@ -37,12 +39,36 @@ type AuthConfig struct {
 // Used by SetInfo to decide whether to embed Auth in the response.
 func (a AuthConfig) HasToken() bool { return a.Enabled && a.Token != "" }
 
+// ServerConfig is the [server] TOML section. Zero values map to
+// the package defaults via fillDefaultsLocked in agent.go.
+type ServerConfig struct {
+	ReadTimeout        time.Duration
+	WriteTimeout       time.Duration
+	MaxHeaderBytes     int
+	PowerActionRatePerS float64 // rate-limiter for POST /api/v1/{reboot,shutdown}; 0 = no limit
+	LogStreamRatePerS   float64 // rate-limiter for GET /api/v1/logs; 0 = no limit
+}
+
+// LogsConfig is the [logs] TOML section. Unit defaults to
+// "spotterd.service" if empty; tail clamps fire even when 0 (we fall
+// to package-level defaultLogTail / maxLogTail).
+type LogsConfig struct {
+	Unit        string
+	DefaultTail int
+	MaxTail     int
+}
+
 // Agent owns the cached DeviceInfo and exposes it to the HTTP/UDP layers.
 type Agent struct {
 	cfg    Config
 	logger *slog.Logger
 	mu     sync.RWMutex
 	info   protocol.DeviceInfo
+
+	// limiter is the optional per-IP rate-limit bucket for power
+	// actions / log streams. Allocated lazily inside Handler().
+	limiter  *ipLimiter
+	limOnce  sync.Once
 }
 
 // New constructs an Agent. Returns an error if cfg is missing required fields.
@@ -84,6 +110,7 @@ func (a *Agent) SetInfo(info protocol.DeviceInfo) {
 	} else {
 		info.Auth = nil
 	}
+	info.LastHeartbeatAt = protocol.LastHeartbeatAt(time.Now().UTC().Format(time.RFC3339))
 	a.info = info
 }
 

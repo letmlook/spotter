@@ -11,6 +11,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // ExecSystemctl invokes systemctl with the given action. Package-level
@@ -34,7 +36,22 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/reboot", a.handlePowerAction("reboot"))
 	mux.HandleFunc("/api/v1/shutdown", a.handlePowerAction("shutdown"))
 	mux.HandleFunc("/api/v1/logs", a.handleLogs)
-	return a.recoverMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger))
+	h := http.Handler(mux)
+	h = authMiddleware(h, a.cfg.Auth, a.logger)
+	h = rateLimitMiddleware(h, a.powerLimiter())
+	return a.recoverMiddleware(h)
+}
+
+// powerLimiter is the per-IP token bucket gating POST
+// /api/v1/{reboot,shutdown}. nil when rate is not configured.
+func (a *Agent) powerLimiter() *ipLimiter {
+	if a.cfg.Server.PowerActionRatePerS <= 0 {
+		return nil
+	}
+	a.limOnce.Do(func() {
+		a.limiter = newIPLimiter(rate.Limit(a.cfg.Server.PowerActionRatePerS), 2)
+	})
+	return a.limiter
 }
 
 func (a *Agent) handleHealthz(w http.ResponseWriter, _ *http.Request) {

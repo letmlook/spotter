@@ -38,6 +38,29 @@ type tomlConfig struct {
 	EnableLogStream    bool          `toml:"enable_log_stream"`
 	LogUnit            string        `toml:"log_unit"`
 	HelloInterval      time.Duration `toml:"hello_interval"`
+
+	Auth   authSection   `toml:"auth"`
+	Server serverSection `toml:"server"`
+	Logs   logsSection   `toml:"logs"`
+}
+
+type authSection struct {
+	Enabled bool   `toml:"enabled"`
+	Token   string `toml:"token"`
+}
+
+type serverSection struct {
+	ReadTimeout     time.Duration `toml:"read_timeout"`
+	WriteTimeout    time.Duration `toml:"write_timeout"`
+	MaxHeaderBytes  int           `toml:"max_header_bytes"`
+	PowerActionRate float64       `toml:"power_action_rate_per_sec"`
+	LogStreamRate   float64       `toml:"log_stream_rate_per_sec"`
+}
+
+type logsSection struct {
+	Unit       string `toml:"unit"`
+	DefaultTail int   `toml:"default_tail"`
+	MaxTail     int   `toml:"max_tail"`
 }
 
 func main() {
@@ -76,6 +99,22 @@ func main() {
 		EnableLogStream:    cfg.EnableLogStream,
 		LogUnit:            cfg.LogUnit,
 		HelloInterval:      cfg.HelloInterval,
+		Auth: agentd.AuthConfig{
+			Enabled: cfg.Auth.Enabled,
+			Token:   cfg.Auth.Token,
+		},
+		Server: agentd.ServerConfig{
+			ReadTimeout:          cfg.Server.ReadTimeout,
+			WriteTimeout:         cfg.Server.WriteTimeout,
+			MaxHeaderBytes:       cfg.Server.MaxHeaderBytes,
+			PowerActionRatePerS:  cfg.Server.PowerActionRate,
+			LogStreamRatePerS:    cfg.Server.LogStreamRate,
+		},
+		Logs: agentd.LogsConfig{
+			Unit:        cfg.Logs.Unit,
+			DefaultTail: cfg.Logs.DefaultTail,
+			MaxTail:     cfg.Logs.MaxTail,
+		},
 	}, log)
 	if err != nil {
 		log.Error("create agent", slog.String("err", err.Error()))
