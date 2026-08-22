@@ -8,6 +8,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -345,4 +346,52 @@ func (a *App) ClearRegistry() (int, error) {
 	}
 	a.logger.Info("registry cleared", slog.Int("count", len(entries)))
 	return len(entries), nil
+}
+
+// RebootDevice sends a remote reboot command to the device identified
+// by deviceID. Returns an error if the device is not in the registry
+// or is marked offline. A client-side HTTP timeout is treated as
+// success — the command may have been dispatched before the agent's
+// connection hung up during reboot.
+func (a *App) RebootDevice(deviceID string) error {
+	return a.powerAction(deviceID, "reboot")
+}
+
+// ShutdownDevice sends a remote shutdown command. Same semantics as
+// RebootDevice. Note: there is no remote power-on; the device must be
+// physically powered back on.
+func (a *App) ShutdownDevice(deviceID string) error {
+	return a.powerAction(deviceID, "shutdown")
+}
+
+// powerAction is the shared body of RebootDevice/ShutdownDevice.
+func (a *App) powerAction(deviceID string, action string) error {
+	entry, ok := a.reg.Get(deviceID)
+	if !ok {
+		return fmt.Errorf("device not found: %s", deviceID)
+	}
+	if !entry.Online {
+		return fmt.Errorf("device %s is offline", deviceID)
+	}
+	port := entry.Port
+	if port == 0 {
+		port = listenPort
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var err error
+	switch action {
+	case "reboot":
+		err = a.scanner.RebootDevice(ctx, entry.IP, port)
+	case "shutdown":
+		err = a.scanner.ShutdownDevice(ctx, entry.IP, port)
+	}
+	if errors.Is(err, scanner.ErrPowerActionTimeout) {
+		a.logger.Info("power action timeout (optimistic success)",
+			slog.String("device_id", deviceID),
+			slog.String("action", action))
+		return nil
+	}
+	return err
 }
