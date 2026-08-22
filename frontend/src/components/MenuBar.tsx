@@ -96,8 +96,20 @@ export default function MenuBar() {
     items.map((it) => {
       const hasChildren = Array.isArray(it.children) && it.children.length > 0;
       const label = (
-        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-          <span style={{ color: it.danger ? '#ff7875' : undefined, fontWeight: it.selected ? 600 : undefined }}>
+        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 24, alignItems: 'center' }}>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            color: it.danger ? '#ff7875' : undefined,
+            fontWeight: it.selected ? 600 : 400,
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: 12,
+              color: it.selected ? 'var(--color-primary, #1677ff)' : 'transparent',
+              fontWeight: 700,
+            }}>✓</span>
             {it.label}
           </span>
           {it.shortcut && <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{it.shortcut}</span>}
