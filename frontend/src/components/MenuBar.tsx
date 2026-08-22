@@ -70,7 +70,6 @@ export default function MenuBar() {
 
   const viewMenu: MenuItemSpec[] = [
     { key: 'refresh', label: t('menu.view.refresh'), shortcut: 'F5', onClick: () => { actions.refresh().then(refresh); } },
-    { key: 'clear', label: t('menu.view.clear'), onClick: onClearRegistry, danger: true },
     { key: 'theme', label: t('menu.view.theme'), children: [
       { key: 'theme-dark', label: t('menu.view.theme.dark'), onClick: () => setTheme('dark'), selected: theme === 'dark' },
       { key: 'theme-light', label: t('menu.view.theme.light'), onClick: () => setTheme('light'), selected: theme === 'light' },
@@ -85,6 +84,7 @@ export default function MenuBar() {
     { key: 'scan', label: t('menu.tools.scan'), shortcut: '⌘L', onClick: onScan },
     { key: 'add', label: t('menu.tools.add'), shortcut: '⌘I', onClick: () => openModal('add-device') },
     { key: 'guide', label: t('menu.tools.guide'), shortcut: 'F1', onClick: () => openModal('setup-guide') },
+    { key: 'clear', label: t('menu.tools.clear'), onClick: onClearRegistry, danger: true },
   ];
 
   const helpMenu: MenuItemSpec[] = [
