@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button, Form, Input, InputNumber, Space, Alert } from 'antd';
-import { PlusOutlined, ScanOutlined, ImportOutlined, CloseOutlined } from '@ant-design/icons';
+import { ScanOutlined, ImportOutlined, CloseOutlined } from '@ant-design/icons';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useDevices } from '../state/DeviceContext';
 
-type ActiveForm = null | 'deploy' | 'scan' | 'add';
+type ActiveForm = null | 'scan' | 'add';
 
 export default function ActionPanel() {
   const [active, setActive] = useState<ActiveForm>(null);
@@ -19,16 +19,9 @@ export default function ActionPanel() {
     <div style={{ borderBottom: '1px solid #303030' }}>
       <Space.Compact block>
         <Button
-          type={active === 'deploy' ? 'primary' : 'default'}
-          icon={<PlusOutlined />}
-          onClick={() => setActive(active === 'deploy' ? null : 'deploy')}
-          block
-        >
-          Deploy
-        </Button>
-        <Button
           type={active === 'scan' ? 'primary' : 'default'}
           icon={<ScanOutlined />}
+          block
           onClick={() => setActive(active === 'scan' ? null : 'scan')}
         >
           Scan
@@ -43,41 +36,6 @@ export default function ActionPanel() {
       </Space.Compact>
 
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} style={{ margin: 8 }} />}
-
-      {active === 'deploy' && (
-        <Form
-          layout="vertical" size="small"
-          initialValues={{ port: 22, username: 'fitow' }}
-          disabled={busy}
-          onFinish={async (vals: { ip: string; port: number; username: string; password: string }) => {
-            setBusy(true); setError(null);
-            try {
-              await actions.deploy(vals.ip, vals.port, vals.username, vals.password);
-              await refresh();
-              close();
-            } catch (e: unknown) { setError(String(e)); }
-            finally { setBusy(false); }
-          }}
-          style={{ padding: 12 }}
-        >
-          <Form.Item label="IP" name="ip" rules={[{ required: true, pattern: /^(\d{1,3}\.){3}\d{1,3}$/, message: 'Invalid IPv4' }]}>
-            <Input placeholder="10.10.9.165" autoFocus />
-          </Form.Item>
-          <Form.Item label="SSH port" name="port" rules={[{ required: true, type: 'number', min: 1, max: 65535 }]}>
-            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item label="Username" name="username" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item label="Password" name="password" rules={[{ required: true }]}>
-            <Input.Password />
-          </Form.Item>
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={close} icon={<CloseOutlined />}>Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={busy}>Deploy</Button>
-          </Space>
-        </Form>
-      )}
 
       {active === 'scan' && (
         <Form
@@ -106,7 +64,7 @@ export default function ActionPanel() {
       {active === 'add' && (
         <Form
           layout="vertical" size="small" disabled={busy}
-          initialValues={{ port: 9999, username: 'fitow' }}
+          initialValues={{ port: 9999 }}
           onFinish={async (vals: { ip: string; port: number; username: string }) => {
             setBusy(true); setError(null);
             try {
@@ -125,7 +83,7 @@ export default function ActionPanel() {
             <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="Username" name="username" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="optional label" />
           </Form.Item>
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
             <Button onClick={close} icon={<CloseOutlined />}>Cancel</Button>

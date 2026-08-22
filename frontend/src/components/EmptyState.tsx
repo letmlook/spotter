@@ -5,10 +5,10 @@ export default function EmptyState() {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No device selected. Use the sidebar toolbar to deploy, scan a subnet, or add by IP."
+        description="No device selected. Use the sidebar toolbar to scan a subnet or add by IP."
       >
         <Typography.Text type="secondary">
-          Discovered devices from multicast or subnet scans are added automatically.
+          Devices already running spotterd are discovered automatically via multicast.
         </Typography.Text>
       </Empty>
     </div>

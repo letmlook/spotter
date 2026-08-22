@@ -120,26 +120,34 @@ What it does:
 To ship clients for every platform, run the script once on each
 target host and merge the resulting `dist/clients/` directories.
 
-## Deploy to a device
+## Manually installing spotterd on a device
 
-The GUI collects `IP / SSH port / username / password`, picks the
-right `spotterd` binary for the target architecture, and runs:
+The GUI client only discovers and displays devices — `spotterd` itself
+must be installed on each target manually. The release bundle ships
+`scripts/install.sh` to make this a one-liner:
 
 ```bash
-sftp put bin/spotterd-linux-<arch> /tmp/spotterd
-sftp put scripts/install.sh        /tmp/install.sh
-sftp put scripts/spotterd.service  /tmp/spotterd.service
-ssh bash /tmp/install.sh           # exports SPOTTER_AGENT_VERSION
+# Push the matching arch binary, systemd unit, and install script
+scp bin/spotterd-linux-<arch>  user@<device>:/tmp/spotterd
+scp scripts/spotterd.service   user@<device>:/tmp/spotterd.service
+scp scripts/install.sh         user@<device>:/tmp/install.sh
+
+# Run the installer on the target
+ssh user@<device> sudo bash /tmp/install.sh
 ```
 
-The install script:
+`install.sh` will:
 
-1. Installs `spotterd` to `/usr/local/bin/`.
-2. Generates a `device_id` (UUID v4) and writes `/etc/spotterd/agent.toml`.
-3. Installs the systemd unit and enables it.
+1. Install `spotterd` to `/usr/local/bin/`.
+2. Generate a `device_id` (UUID v4) and write `/etc/spotterd/agent.toml`.
+3. Install and enable the systemd unit.
 
 Uninstall uses `scripts/uninstall.sh`; full teardown uses
 `scripts/cleanup.sh`.
+
+Once the device is up, the GUI discovers it automatically via UDP
+multicast (or via the manual subnet scan / "Add by IP" actions) — no
+GUI-side registration is required.
 
 ## Known limitations (MVP)
 
@@ -148,7 +156,6 @@ Uninstall uses `scripts/uninstall.sh`; full teardown uses
 - **No remote command execution** — static info panel only.
 - UDP multicast is **L2-only** (same VLAN) unless routers forward.
 - HTTP endpoints have **no authentication** — deploy on trusted LANs only.
-- SSH credentials are **never persisted** (re-enter per deploy / uninstall).
 
 ## Architecture
 

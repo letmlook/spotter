@@ -13,9 +13,11 @@
 #      macOS the .app bundle is produced; on Linux a plain binary; on
 #      Windows a .exe. To ship binaries for every platform, run this
 #      script once on each platform.
-#   3. Copies install/uninstall/cleanup scripts and the systemd unit
-#      alongside the binaries, plus the README, and writes a
-#      SHA256SUMS file.
+#   3. Copies the systemd unit plus the manual install/uninstall/
+#      cleanup shell scripts alongside the binaries, and writes a
+#      SHA256SUMS file. These scripts are stand-alone utilities — the
+#      GUI client no longer drives them — so users who SSH into a
+#      device by hand have everything they need in one tarball.
 #
 # Output layout:
 #   dist/
@@ -25,10 +27,10 @@
 #   ├── clients/
 #   │   └── ...              # exactly one entry — the host's client
 #   ├── scripts/
-#   │   ├── install.sh
-#   │   ├── uninstall.sh
-#   │   ├── cleanup.sh
-#   │   └── spotterd.service
+#   │   ├── install.sh       # manual device-side installer
+#   │   ├── uninstall.sh     # manual device-side uninstaller
+#   │   ├── cleanup.sh       # best-effort cleanup after a failed install
+#   │   └── spotterd.service # systemd unit (always needed)
 #   ├── README.md
 #   └── SHA256SUMS
 #

@@ -23,7 +23,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/spotter/spotter/internal/deployer"
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 	"github.com/spotter/spotter/internal/scanner"
@@ -38,13 +37,8 @@ var uiFS embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
-// deployUsername is the SSH user assumed when deploying via the GUI.
-// MVP: hardcoded — v1.x may prompt per-device.
-const deployUsername = "fitow"
-
-// listenPort is the device-side HTTP port the client expects after a
-// successful install.sh (the install script writes agent.toml with
-// listen_addr = "0.0.0.0:9999").
+// listenPort is the device-side HTTP port the agent listens on by
+// default (and the port the client expects when polling).
 const listenPort = 9999
 
 func main() {
@@ -175,43 +169,6 @@ func (a *App) RefreshNow() error {
 	return a.scanner.PollOnce(ctx)
 }
 
-// DeployDevice SSH-deploys spotterd to the given IP and registers the
-// new device locally so the GUI begins polling it. Returns the
-// generated DeviceID.
-//
-// Wails does not inject ctx into bound methods, so we accept it as a
-// regular string param (empty = no timeout override) and internally
-// derive a context.Background() with a 60s deploy timeout.
-func (a *App) DeployDevice(ip string, sshPort int, password string) (string, error) {
-	if sshPort == 0 {
-		sshPort = 22
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	dep := &deployer.Deployer{}
-	res, err := dep.Deploy(ctx, deployer.DeployRequest{
-		IP:       ip,
-		SSHPort:  sshPort,
-		Username: deployUsername,
-		Password: password,
-	})
-	if err != nil {
-		return "", fmt.Errorf("deploy: %w", err)
-	}
-	if err := a.reg.Add(registry.Entry{
-		DeviceID:   res.DeviceID,
-		IP:         ip,
-		Port:       listenPort,
-		Username:   deployUsername,
-		DeployedAt: time.Now().UTC().Format(time.RFC3339),
-		Online:     false,
-	}); err != nil {
-		a.logger.Error("register deployed device", slog.String("err", err.Error()))
-		return res.DeviceID, fmt.Errorf("deploy succeeded but failed to register: %w", err)
-	}
-	return res.DeviceID, nil
-}
-
 // ProbeByIP fetches /api/v1/info from ip:port and, if the device is
 // not already registered, adds it to the registry. Returns the new
 // entry. Useful for known-IP setups where UDP multicast is blocked.
@@ -304,9 +261,8 @@ func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username
 	return e, nil
 }
 
-// ClearRegistry removes every entry from the local registry. Used to
-// reset the GUI without touching the remote devices (use Uninstall for
-// that). Returns the number of entries removed.
+// ClearRegistry removes every entry from the local registry. Returns
+// the number of entries removed.
 func (a *App) ClearRegistry() (int, error) {
 	entries := a.reg.List()
 	for _, e := range entries {
@@ -316,40 +272,4 @@ func (a *App) ClearRegistry() (int, error) {
 	}
 	a.logger.Info("registry cleared", slog.Int("count", len(entries)))
 	return len(entries), nil
-}
-
-// UninstallDevice SSH-runs uninstall.sh on the registered device and
-// removes its registry entry. Password and username are re-supplied by
-// the user per spec §5.3 (SSH credentials are never persisted). If
-// username is empty, falls back to whatever the registry stored.
-func (a *App) UninstallDevice(deviceID string, username string, password string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	entry, ok := a.reg.Get(deviceID)
-	if !ok {
-		return fmt.Errorf("device %q not found in registry", deviceID)
-	}
-	if username == "" {
-		username = entry.Username
-	}
-	if username == "" {
-		return fmt.Errorf("device %q has no SSH username recorded; supply one", deviceID)
-	}
-	// Persist the supplied username for future uninstalls.
-	if entry.Username != username {
-		_ = a.reg.Update(deviceID, func(e *registry.Entry) { e.Username = username })
-	}
-	dep := &deployer.Deployer{}
-	if err := dep.Uninstall(ctx, deployer.DeployRequest{
-		IP:       entry.IP,
-		SSHPort:  22,
-		Username: username,
-		Password: password,
-	}); err != nil {
-		return fmt.Errorf("uninstall: %w", err)
-	}
-	if err := a.reg.Remove(deviceID); err != nil {
-		return fmt.Errorf("uninstall succeeded on device but registry removal failed: %w", err)
-	}
-	return nil
 }

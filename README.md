@@ -105,24 +105,29 @@ make release                        # 等价入口
 
 发布全平台客户端时，只需在每台目标机器上各跑一次脚本，再把各自的 `dist/clients/` 合并即可。
 
-## 部署到设备
+## 手动安装 spotterd 到设备
 
-GUI 收集 `IP / SSH 端口 / 用户名 / 密码` 后，按目标架构选择对应的 `spotterd` 二进制并执行：
+GUI 客户端只负责发现 / 展示信息；`spotterd` 需要在每台目标设备上手动安装。随发布包分发的 `scripts/install.sh` 提供一键安装流程：
 
 ```bash
-sftp put bin/spotterd-linux-<arch> /tmp/spotterd
-sftp put scripts/install.sh        /tmp/install.sh
-sftp put scripts/spotterd.service  /tmp/spotterd.service
-ssh bash /tmp/install.sh           # 同时导出 SPOTTER_AGENT_VERSION
+# 从开发机把对应架构的二进制、systemd 单元、安装脚本推到目标设备
+scp bin/spotterd-linux-<arch>  user@<device>:/tmp/spotterd
+scp scripts/spotterd.service   user@<device>:/tmp/spotterd.service
+scp scripts/install.sh         user@<device>:/tmp/install.sh
+
+# 在目标设备上执行
+ssh user@<device> sudo bash /tmp/install.sh
 ```
 
-安装脚本会：
+`install.sh` 会：
 
-1. 将 `spotterd` 安装到 `/usr/local/bin/`。
+1. 把 `spotterd` 安装到 `/usr/local/bin/`。
 2. 生成 `device_id`（UUID v4）并写入 `/etc/spotterd/agent.toml`。
 3. 安装并启用 systemd 单元。
 
 卸载使用 `scripts/uninstall.sh`；彻底清理使用 `scripts/cleanup.sh`。
+
+GUI 客户端通过 UDP 组播（或手动子网扫描 / 按 IP 添加）发现该设备后会自动开始轮询，无需在 GUI 上做任何"注册"操作。
 
 ## 已知限制（MVP）
 
@@ -130,7 +135,6 @@ ssh bash /tmp/install.sh           # 同时导出 SPOTTER_AGENT_VERSION
 - **不支持远端命令执行** —— 仅提供静态信息面板。
 - UDP 组播仅限 **L2**（同 VLAN），除非路由器主动转发。
 - HTTP 端点 **无身份认证** —— 仅限可信局域网内部署。
-- SSH 凭据 **从不持久化**（每次部署 / 卸载都需重新输入）。
 
 ## 架构设计
 
