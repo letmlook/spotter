@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Button, Modal, Space, Tooltip, message, Tag as AntTag } from 'antd';
+import { useState } from 'react';
+import { Button, Modal, Space, Tooltip, message } from 'antd';
 import { PoweroffOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useDevices } from '../state/DeviceContext';
 import { useI18n } from '../state/I18nContext';
@@ -9,7 +9,6 @@ import NetworkCard from './NetworkCard';
 import JetsonCard from './JetsonCard';
 import EmptyState from './EmptyState';
 import LogSection from './LogSection';
-import MetricSpark from './MetricSpark';
 
 type PowerAction = 'reboot' | 'shutdown';
 
@@ -21,26 +20,6 @@ export default function DetailPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const device = state.devices.find((d) => d.device_id === state.selectedId);
   const hostname = device?.last_info?.basic?.hostname || device?.ip || '';
-  // Rolling history of CPU seconds + CPU temp; the parent component
-  // re-renders whenever the registry snapshot changes (every poll
-  // cycle). We cap history at 80 samples (~6 minutes at 5s poll).
-  const [cpuHist, setCpuHist] = useState<number[]>([]);
-  const [tempHist, setTempHist] = useState<number[]>([]);
-  const [memHist, setMemHist] = useState<number[]>([]);
-  useEffect(() => {
-    const li = (device as unknown as { last_info?: Record<string, unknown> }).last_info;
-    const mi = (li?.metrics ?? {}) as Record<string, unknown>;
-    if (typeof mi.cpu_seconds_total === 'number') {
-      setCpuHist((prev) => [...prev.slice(-79), mi.cpu_seconds_total as number]);
-    }
-    if (typeof mi.cpu_temp_c === 'number') {
-      setTempHist((prev) => [...prev.slice(-79), mi.cpu_temp_c as number]);
-    }
-    if (typeof mi.mem_total_bytes === 'number' && typeof mi.mem_available_bytes === 'number') {
-      const used = 1 - (mi.mem_available_bytes as number) / (mi.mem_total_bytes as number);
-      setMemHist((prev) => [...prev.slice(-79), used * 100]);
-    }
-  }, [device?.last_info]);
 
   const onRefresh = async () => {
     if (!device) return;
@@ -157,18 +136,6 @@ export default function DetailPanel() {
             </div>
             <div style={{ marginTop: 12 }}>
               <NetworkCard device={device} />
-            </div>
-            {(((device as unknown as { tags?: string[] }).tags ?? []) as string[]).length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                {((device as unknown as { tags?: string[] }).tags ?? []).map((tag) => (
-                  <AntTag key={tag} color="blue">{tag}</AntTag>
-                ))}
-              </div>
-            )}
-            <div style={{ marginTop: 12, display: 'flex', gap: 16 }}>
-              <MetricSpark label={t('metrics.cpu')} unit="s" points={cpuHist} color="#69b1ff" decimals={1} />
-              <MetricSpark label={t('metrics.cpuTemp')} unit="°C" points={tempHist} color="#ffc53d" decimals={0} />
-              <MetricSpark label={t('metrics.memUsage')} unit="%" points={memHist} color="#95de64" decimals={1} />
             </div>
           </>
         )}
