@@ -1,5 +1,7 @@
-// spotter-client is the Windows GUI application that discovers
-// spotterd instances and displays their info.
+// spotter-client is the cross-platform desktop GUI (Windows, macOS,
+// Linux) that discovers spotterd instances and displays their info.
+// The Wails options.App below configures all three OS families; the
+// active platform is selected at build time via GOOS.
 package main
 
 import (

@@ -1,8 +1,9 @@
 //go:build linux
 
 // spotterd is the device-side daemon. It runs as a systemd unit on
-// Linux ARM64 devices (Jetson, Ubuntu Server, etc.) and exposes
-// HTTP+UDP endpoints that the Windows client polls/discovers.
+// Linux devices (arm64 SBCs such as Jetson, plus amd64 servers and
+// workstations) and exposes HTTP+UDP endpoints that the client
+// polls/discovers.
 package main
 
 import (

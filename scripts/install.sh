@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# spotterd installer. Invoked by the Windows client over SSH:
+# spotterd installer. Invoked by the GUI client over SSH:
 #   SPOTTER_AGENT_VERSION=<ver> bash /tmp/install.sh
 # Reads the agent binary from /tmp/spotterd and unit from /tmp/spotterd.service.
+# Works on any systemd-equipped Linux: the binary is uploaded by the
+# client with the correct GOARCH (arm64 or amd64) chosen at deploy time.
 
 AGENT_SRC="${AGENT_SRC:-/tmp/spotterd}"
 UNIT_SRC="${UNIT_SRC:-/tmp/spotterd.service}"

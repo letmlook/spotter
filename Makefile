@@ -1,4 +1,4 @@
-.PHONY: test build agent client clean
+.PHONY: test build agent agent-all agent-linux-arm64 agent-linux-x64 client clean
 
 GO ?= go
 GOFLAGS ?= -trimpath
@@ -8,15 +8,29 @@ test:
 
 build: agent client
 
+# Native build for the host OS/arch (handy for `go run ./cmd/agent`
+# during development on Linux/macOS dev boxes).
 agent:
 	$(GO) build $(GOFLAGS) -o bin/spotterd ./cmd/agent
+
+# All supported device targets. spotterd runs on any Linux with
+# systemd; the two matrix entries below cover the deployed fleet
+# (ARM64 SBCs + x86_64 servers/workstations).
+agent-all: agent-linux-arm64 agent-linux-x64
 
 agent-linux-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) \
 		-o bin/spotterd-linux-arm64 ./cmd/agent
 
+agent-linux-x64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) \
+		-o bin/spotterd-linux-x64 ./cmd/agent
+
 WAILS := $(shell command -v wails 2>/dev/null)
 
+# spotter-client is a Wails desktop GUI. The same source produces
+# native binaries for Windows, macOS and Linux; the active GOOS at
+# build time selects which.
 client:
 ifneq ($(WAILS),)
 	$(WAILS) build
