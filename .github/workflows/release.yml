@@ -119,6 +119,12 @@ jobs:
         working-directory: frontend
         run: npm ci --no-audit --fund=false
 
+      - name: Generate Wails frontend bindings
+        # wails build needs frontend/wailsjs/* to be present so the
+        # embedded Go-side proxy for the bound App methods can compile.
+        # They are gitignored, so we regenerate on every run.
+        run: wails generate module
+
       - name: Build spotter-client (linux/amd64) with Wails
         working-directory: ${{ github.workspace }}
         run: |
