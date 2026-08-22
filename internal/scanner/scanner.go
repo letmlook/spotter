@@ -49,6 +49,7 @@ func (EventUnknownDeviceDiscovered) Tag() string { return "unknown-device" }
 // Options for configuring a Scanner.
 type Options struct {
 	HTTPClient    *http.Client
+	LogHTTPClient *http.Client // 独立于 HTTPClient（无 read timeout）
 	PollInterval  time.Duration
 	McastInterval time.Duration
 	OnEvent       func(Event)
@@ -62,6 +63,9 @@ type Options struct {
 func (o Options) withDefaults() Options {
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{Timeout: 3 * time.Second}
+	}
+	if o.LogHTTPClient == nil {
+		o.LogHTTPClient = &http.Client{Timeout: 0} // 跟随 ctx
 	}
 	if o.PollInterval == 0 {
 		o.PollInterval = 30 * time.Second
@@ -92,6 +96,13 @@ func WithOnEvent(fn func(Event)) func(*Options) {
 // WithHTTPClient overrides the default HTTP client (used by Scanner.RebootDevice etc.).
 func WithHTTPClient(c *http.Client) func(*Options) {
 	return func(o *Options) { o.HTTPClient = c }
+}
+
+// WithLogHTTPClient overrides the streaming client used by
+// Scanner.StreamDeviceLogs. The streaming client should have no read
+// timeout so long-lived log streams are not cut off prematurely.
+func WithLogHTTPClient(c *http.Client) func(*Options) {
+	return func(o *Options) { o.LogHTTPClient = c }
 }
 
 // Scanner runs the three discovery loops.
