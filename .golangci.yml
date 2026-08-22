@@ -52,4 +52,6 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/spotter/spotter
+      # v2 schema: local-prefixes is an array, not a single string.
+      local-prefixes:
+        - github.com/spotter/spotter
