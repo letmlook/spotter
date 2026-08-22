@@ -97,6 +97,29 @@ Artifacts are written to `bin/`:
 | `bin/spotter-client` / `.exe`       | root `main.go`    | host GOOS     |
 | `build/bin/Spotter.app`             | `wails build`     | macOS bundle  |
 
+## Release packaging
+
+`scripts/build-all.sh` orchestrates a one-shot release build on a
+single host:
+
+```bash
+./scripts/build-all.sh              # full build (agents + host client)
+./scripts/build-all.sh --agent-only # agents only, skip client
+make release                        # equivalent entry point
+```
+
+What it does:
+
+- **Devices**: always cross-compiles Linux `arm64` and `amd64`
+  binaries.
+- **Client**: builds only for the current host — `Spotter.app` on
+  macOS, `.exe` on Windows, plain binary on Linux.
+- **Packaging**: stages everything under `dist/` and writes a
+  `SHA256SUMS` file.
+
+To ship clients for every platform, run the script once on each
+target host and merge the resulting `dist/clients/` directories.
+
 ## Deploy to a device
 
 The GUI collects `IP / SSH port / username / password`, picks the

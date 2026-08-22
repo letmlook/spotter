@@ -87,6 +87,24 @@ cd frontend && npm install && npm run build
 | `bin/spotter-client` / `.exe`       | 根目录 `main.go` | 当前 GOOS        |
 | `build/bin/Spotter.app`             | `wails build`    | macOS 应用包     |
 
+## 全平台打包
+
+`scripts/build-all.sh` 提供一键构建并打包脚本，适合发布前在单一主机上产出完整 release 制品：
+
+```bash
+./scripts/build-all.sh              # 完整构建（agents + 当前平台客户端）
+./scripts/build-all.sh --agent-only # 仅构建设备端二进制
+make release                        # 等价入口
+```
+
+行为说明：
+
+- **设备端**：始终为 Linux `arm64` 与 `amd64` 交叉编译（Go 交叉编译在所有主机通用）。
+- **客户端**：只为当前主机构建 —— macOS 上产出 `Spotter.app`，Windows 上产出 `.exe`，Linux 上产出二进制。
+- **打包**：所有产物整齐归入 `dist/`，并自动生成 `SHA256SUMS`。
+
+发布全平台客户端时，只需在每台目标机器上各跑一次脚本，再把各自的 `dist/clients/` 合并即可。
+
 ## 部署到设备
 
 GUI 收集 `IP / SSH 端口 / 用户名 / 密码` 后，按目标架构选择对应的 `spotterd` 二进制并执行：

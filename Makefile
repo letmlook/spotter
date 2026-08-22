@@ -1,4 +1,4 @@
-.PHONY: test build agent agent-all agent-linux-arm64 agent-linux-x64 client clean
+.PHONY: test build agent agent-all agent-linux-arm64 agent-linux-x64 client release clean
 
 GO ?= go
 GOFLAGS ?= -trimpath
@@ -41,3 +41,14 @@ endif
 
 clean:
 	rm -rf bin/
+
+# One-click cross-platform release build. Wraps scripts/build-all.sh
+# which produces both Linux device binaries and (best-effort) client
+# builds for every Wails target, then packages everything under dist/.
+# For flag-forwarding variants (`--agent-only`, `--host-only`,
+# `--no-cross`), invoke the script directly:
+#
+#   ./scripts/build-all.sh --agent-only
+#
+release:
+	./scripts/build-all.sh
