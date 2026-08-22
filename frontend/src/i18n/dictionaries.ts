@@ -46,6 +46,13 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.status.offline': 'offline',
     'detail.actions': 'Device actions',
     'detail.refresh': 'Refresh',
+    'detail.actions.power.reboot': 'Reboot',
+    'detail.actions.power.shutdown': 'Shut down',
+    'detail.actions.power.reboot.confirmTitle': 'Reboot {hostname}?',
+    'detail.actions.power.reboot.confirmOk': 'Reboot',
+    'detail.actions.power.shutdown.confirmTitle': 'Shut down {hostname}?',
+    'detail.actions.power.shutdown.confirmOk': 'Shut down',
+    'detail.actions.power.disabledHint': 'Enable enable_power_actions on the agent to use this.',
 
     // Cards (BasicCard / NetworkCard / JetsonCard)
     'card.basic.title': 'Basic',
@@ -183,6 +190,13 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.status.offline': '离线',
     'detail.actions': '设备操作',
     'detail.refresh': '刷新',
+    'detail.actions.power.reboot': '重启',
+    'detail.actions.power.shutdown': '关机',
+    'detail.actions.power.reboot.confirmTitle': '即将重启 {hostname}？',
+    'detail.actions.power.reboot.confirmOk': '重启',
+    'detail.actions.power.shutdown.confirmTitle': '即将关闭 {hostname}？',
+    'detail.actions.power.shutdown.confirmOk': '关闭电源',
+    'detail.actions.power.disabledHint': '该设备未启用远程电源管理（需在 agent.toml 设置 enable_power_actions = true）。',
 
     'card.basic.title': '基本信息',
     'card.basic.hostname': '主机名',
