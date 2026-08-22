@@ -65,9 +65,28 @@ jobs:
           security import /tmp/cert.p12 -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -A
           security list-keychain -d user -s "$KEYCHAIN"
 
-      - name: Codesign
+      - name: Pre-flight secrets presence
+        id: secrets
+        env:
+          NEEDED: MACOS_CERT_P12_BASE64,MACOS_CERT_PASSWORD,APPLE_API_KEY_BASE64
+          SECRETS_JSON: ${{ toJson(secrets) }}
+        run: |
+          set -e
+          for s in $(echo "$NEEDED" | tr ',' ' '); do
+            if [ -z "${!s:-}" ]; then
+              echo "::warning::secret $s not configured — codesign/notarize will be skipped"
+              echo "missing=$s" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+      - name: Codesign + verify
         if: ${{ env.MACOS_CERT_P12_BASE64 != '' }}
-        run: codesign --deep --force --options=runtime --sign "Developer ID Application: ${{ secrets.APPLE_TEAM_NAME }}" build/bin/Spotter.app
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+        run: |
+          codesign --deep --force --options=runtime --sign "Developer ID Application: ${{ secrets.APPLE_TEAM_NAME }}" build/bin/Spotter.app
+          codesign --verify --strict --deep build/bin/Spotter.app
+          codesign -dv build/bin/Spotter.app 2>&1 | head -20
 
       - name: Notarize
         if: ${{ env.APPLE_API_KEY_BASE64 != '' }}
@@ -80,7 +99,9 @@ jobs:
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_$APPLE_API_KEY_ID.p8
           ditto -c -k --sequesterRsrc --keepParent build/bin/Spotter.app build/bin/Spotter.zip
           xcrun notarytool submit build/bin/Spotter.zip --keychain-profile "spotter-notary" --wait
+          xcrun notarytool log --info
           xcrun stapler staple build/bin/Spotter.app
+          xcrun stapler validate build/bin/Spotter.app
 
       - name: Build DMG
         if: always()

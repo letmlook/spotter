@@ -1,0 +1,52 @@
+name: homebrew-formula
+
+# Validates the Homebrew formula in scripts/packages/homebrew/spotter.rb
+# at PR-time: parses the Ruby, recomputes the expected sha256 from
+# the current HEAD, and asserts they match. The "recompute" is
+# deterministic (git archive of HEAD) so the formula never falls
+# behind again.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ruby + sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ruby syntax
+        run: ruby -c scripts/packages/homebrew/spotter.rb
+
+      - name: recompute sha256 of v1.0.0 tarball
+        id: sha
+        run: |
+          set -e
+          # For SHA-tagged releases we use the tag, but during the
+          # v1.0 cycle we're pinned to a moving HEAD. The formula
+          # is bumped when the version changes; this job fails if
+          # the formula's baked-in sha no longer matches HEAD.
+          git archive --format=tar.gz --prefix=spotter-1.0.0/ HEAD -o /tmp/spotter.tar.gz
+          ACTUAL="$(sha256sum /tmp/spotter.tar.gz | awk '{print $1}')"
+          echo "actual=$ACTUAL" >> "$GITHUB_OUTPUT"
+          EXPECTED="$(grep -oE 'sha256 "[a-f0-9]{64}"' scripts/packages/homebrew/spotter.rb | head -1 | awk -F'"' '{print $2}')"
+          echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::sha mismatch — bump the formula via scripts/update-homebrew-sha.sh"
+            exit 1
+          fi
+          echo "OK sha matches formula"
+
+      - name: verify init scripts syntactically
+        run: |
+          bash -n scripts/init/openrc/spotterd
+          bash -n scripts/init/runit/spotterd.run
+          bash -n scripts/install.sh
+          bash -n scripts/update-homebrew-sha.sh

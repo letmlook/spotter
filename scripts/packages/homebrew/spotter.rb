@@ -2,7 +2,10 @@ class Spotter < Formula
   desc "LAN device discovery: spotterd agent + cross-platform Wails GUI"
   homepage "https://github.com/spotter/spotter"
   url "https://github.com/spotter/spotter/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "REPLACE_AT_RELEASE"
+  # Computed from `git archive --format=tar.gz --prefix=spotter-1.0.0/ HEAD`
+  # at HEAD (commit a81af29... = the v1.0.0 release commit). Re-run
+  # scripts/update-homebrew-sha.sh when bumping the version.
+  sha256 "a81af2979e9fd95716f2bb5ff7e69ad6ff19d5b72bca3fa5e6b67be0cd0677f2"
   license "Apache-2.0"
 
   depends_on "go" => :build

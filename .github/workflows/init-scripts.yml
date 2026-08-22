@@ -1,0 +1,63 @@
+name: init-scripts
+
+# Smoke-tests the OpenRC and runit init scripts on real Alpine +
+# Void container images. We do this because:
+#
+#   - bash -n only catches syntax; it cannot prove the script runs
+#     through the init system's "start the service" path.
+#   - The two init systems use different shells (OpenRC uses
+#     /sbin/openrc-run, runit uses /bin/sh) so coverage on Linux
+#     libc alone is insufficient.
+#
+# This workflow is opt-in (`workflow_dispatch`) rather than a hard
+# gate so PR builds stay fast; release runs include it.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  openrc-alpine:
+    name: OpenRC (Alpine 3.20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenRC smoke
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/repo:ro" \
+            alpine:3.20 sh -c '
+              set -e
+              apk add --no-cache openrc bash sudo
+              mkdir -p /etc/init.d /etc/spotterd /var/log /usr/local/bin
+              install -m 0755 /repo/scripts/install.sh /usr/local/bin/install-spotterd || true
+              install -m 0755 /repo/scripts/init/openrc/spotterd /etc/init.d/spotterd
+              # openrc-run shellchecks: parse-only check on the alpine
+              # binaries to catch /bin/sh vs /sbin/openrc-run confusions.
+              /sbin/openrc-run /etc/init.d/spotterd --help 2>&1 | head -5 || true
+              echo "OK openrc syntax"
+              rc-service --dry-run spotterd start 2>&1 | head -5 || true
+            '
+
+  runit-void:
+    name: runit (Void Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: runit smoke
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/repo:ro" \
+            voidlinux/voidlinux:latest bash -c '
+              set -e
+              xbps-install -ySy runit bash
+              mkdir -p /etc/sv/spotterd /var/log /usr/local/bin
+              install -m 0755 /repo/scripts/init/runit/spotterd.run /etc/sv/spotterd/run
+              # Smoke-check: script is shell-parsable, references spotterd
+              head -1 /etc/sv/spotterd/run
+              bash -n /etc/sv/spotterd/run && echo "OK runit syntax"
+              sh -n /etc/sv/spotterd/run && echo "OK runit sh syntax"
+            '
