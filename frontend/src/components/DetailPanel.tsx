@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Button, Modal, Space, message } from 'antd';
-import { PoweroffOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { Button, Modal, Space, Tooltip, message } from 'antd';
+import { PoweroffOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useDevices } from '../state/DeviceContext';
 import { useI18n } from '../state/I18nContext';
 import { useDeviceActions } from '../hooks/useDeviceActions';
@@ -8,18 +8,25 @@ import BasicCard from './BasicCard';
 import NetworkCard from './NetworkCard';
 import JetsonCard from './JetsonCard';
 import EmptyState from './EmptyState';
-import DeviceActions from './DeviceActions';
 import LogSection from './LogSection';
 
 type PowerAction = 'reboot' | 'shutdown';
 
 export default function DetailPanel() {
-  const { state } = useDevices();
+  const { state, refresh } = useDevices();
   const { t } = useI18n();
   const actions = useDeviceActions();
   const [busyAction, setBusyAction] = useState<PowerAction | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const device = state.devices.find((d) => d.device_id === state.selectedId);
   const hostname = device?.last_info?.basic?.hostname || device?.ip || '';
+
+  const onRefresh = async () => {
+    if (!device) return;
+    setRefreshing(true);
+    try { await actions.refresh(); await refresh(); }
+    finally { setRefreshing(false); }
+  };
 
   const runPowerAction = (kind: PowerAction) => {
     if (!device) return;
@@ -92,6 +99,16 @@ export default function DetailPanel() {
                 </span>
               </h2>
               <Space>
+                <Tooltip title={t('detail.refresh')}>
+                  <Button
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    loading={refreshing}
+                    onClick={onRefresh}
+                  >
+                    {t('detail.refresh')}
+                  </Button>
+                </Tooltip>
                 <Button
                   size="small"
                   icon={<PoweroffOutlined />}
@@ -131,7 +148,6 @@ export default function DetailPanel() {
           <LogSection deviceID={device.device_id} online={device.online} />
         </div>
       )}
-      {device && <DeviceActions />}
     </div>
   );
 }
