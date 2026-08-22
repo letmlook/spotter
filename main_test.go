@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spotter/spotter/internal/clientconfig"
 	"github.com/spotter/spotter/internal/registry"
 	"github.com/spotter/spotter/internal/scanner"
 )
@@ -43,7 +44,11 @@ func (f *fakeEmitter) count(prefix string) int {
 
 func newTestApp(t *testing.T, reg *registry.Registry, em Emitter) *App {
 	t.Helper()
-	a := NewApp(reg, slog.New(slog.NewTextHandler(io.Discard, nil)), em)
+	settings, err := clientconfig.Open(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(reg, settings, slog.New(slog.NewTextHandler(io.Discard, nil)), em)
 	// 替换 streamFn 为同步 fake
 	a.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
 		// 默认 fake：emit 3 行后返回 nil

@@ -30,6 +30,7 @@ import (
 
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
+	"github.com/spotter/spotter/internal/clientconfig"
 	"github.com/spotter/spotter/internal/scanner"
 )
 
@@ -87,8 +88,13 @@ func main() {
 		logger.Error("open registry", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
+	settings, err := clientconfig.Open(filepath.Join(dataDir, "settings.json"))
+	if err != nil {
+		logger.Error("open client settings", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
 
-	app := NewApp(reg, logger, wailsEmitter{})
+	app := NewApp(reg, settings, logger, wailsEmitter{})
 
 	err = wails.Run(&options.App{
 		Title:  "Spotter",
@@ -137,6 +143,7 @@ func main() {
 // App is the Wails-bound object. Frontend calls these methods.
 type App struct {
 	reg          *registry.Registry
+	settings      *clientconfig.Store
 	logger       *slog.Logger
 	scanner      *scanner.Scanner
 	emitter      Emitter
@@ -159,22 +166,53 @@ func (a *App) OnStartup(ctx context.Context) {
 // listen with EventsOn. app.ctx is seeded with context.Background()
 // so the very first event from the scanner (which may fire before
 // OnStartup runs) does not dereference a nil ctx.
-func NewApp(reg *registry.Registry, logger *slog.Logger, emitter Emitter) *App {
+func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.Logger, emitter Emitter) *App {
 	if emitter == nil {
 		emitter = wailsEmitter{}
 	}
 	app := &App{
-		reg: reg, logger: logger, emitter: emitter,
+		reg: reg, settings: settings, logger: logger, emitter: emitter,
 		ctx:        context.Background(),
 		logStreams: map[string]context.CancelFunc{},
 	}
-	app.scanner = scanner.New(reg, scanner.WithOnEvent(func(e scanner.Event) {
-		logger.Info("scanner event", slog.String("tag", e.Tag()))
-		app.emitter.Emit(app.ctx, e.Tag(), e)
-	}))
+	s := settings.Get()
+	opts := []func(*scanner.Options){
+		scanner.WithOnEvent(func(e scanner.Event) {
+			logger.Info("scanner event", slog.String("tag", e.Tag()))
+			app.emitter.Emit(app.ctx, e.Tag(), e)
+		}),
+		scanner.WithMulticastGroup(s.MulticastGroup),
+		scanner.WithDevicePort(s.DevicePort),
+	}
+	if s.AuthToken != "" {
+		opts = append(opts, scanner.WithAuthToken(s.AuthToken))
+	}
+	app.scanner = scanner.New(reg, opts...)
 	// streamFn 默认指向 scanner 实现；测试可覆盖。
 	app.streamFn = app.scanner.StreamDeviceLogs
 	return app
+}
+
+// GetSettings returns the current user settings. The frontend uses this
+// to pre-fill the Settings dialog.
+func (a *App) GetSettings() clientconfig.Settings {
+	return a.settings.Get()
+}
+
+// SetSettings replaces settings and flushes to disk. Returns the new
+// settings on success so the UI can update its form-state in one trip.
+func (a *App) SetSettings(in clientconfig.Settings) (clientconfig.Settings, error) {
+	if err := a.settings.Set(in); err != nil {
+		return clientconfig.Settings{}, err
+	}
+	// Resync the scanner with the new values. The next poll/mcast
+	// tick picks them up, so we do NOT need to bounce the loop.
+	s := a.settings.Get()
+	a.logger.Info("settings applied",
+		slog.String("multicast", s.MulticastGroup),
+		slog.Int("port", s.DevicePort),
+	)
+	return s, nil
 }
 
 // StartScanner begins the poll + mcast loops. The frontend calls this

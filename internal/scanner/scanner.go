@@ -125,6 +125,16 @@ func WithOnEvent(fn func(Event)) func(*Options) {
 	return func(o *Options) { o.OnEvent = fn }
 }
 
+// WithMulticastGroup overrides the default 239.255.42.42:9999.
+func WithMulticastGroup(group string) func(*Options) {
+	return func(o *Options) { o.MulticastGroup = group }
+}
+
+// WithDevicePort overrides the default 9999.
+func WithDevicePort(port int) func(*Options) {
+	return func(o *Options) { o.DevicePort = port }
+}
+
 // WithHTTPClient overrides the default HTTP client (used by Scanner.RebootDevice etc.).
 func WithHTTPClient(c *http.Client) func(*Options) {
 	return func(o *Options) { o.HTTPClient = c }
