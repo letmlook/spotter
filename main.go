@@ -223,7 +223,9 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	opts = append(opts, scanner.WithEnableMDNS())
 	app.scanner = scanner.New(reg, opts...)
 	// streamFn 默认指向 scanner 实现；测试可覆盖。
-	app.streamFn = app.scanner.StreamDeviceLogs
+	app.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
+		return app.scanner.StreamDeviceLogs(ctx, ip, port, "", onLine)
+	}
 	return app
 }
 

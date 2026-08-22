@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -32,9 +33,16 @@ type journalRecord struct {
 // device and invokes onLine for each NDJSON record. Returns when ctx
 // is cancelled, the stream ends, or any read/decode error occurs.
 // Malformed lines are skipped (not fatal).
-func (s *Scanner) StreamDeviceLogs(ctx context.Context, ip string, port int, onLine func(LogLine)) error {
+//
+// cursor is journalctl's __CURSOR value returned by the most recent
+// line; passing it causes the agent to resume streaming from that
+// point forward — empty cursor = start at the tail of the journal.
+func (s *Scanner) StreamDeviceLogs(ctx context.Context, ip string, port int, cursor string, onLine func(LogLine)) error {
 	target := fmt.Sprintf("http://%s:%d/api/v1/logs?tail=100", ip, port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if cursor != "" {
+		target += "&cursor=" + url.QueryEscape(cursor)
+	}
+	req, err := s.newRequest(ctx, http.MethodGet, target)
 	if err != nil {
 		return err
 	}

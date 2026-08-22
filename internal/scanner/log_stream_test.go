@@ -72,7 +72,7 @@ func TestStreamDeviceLogs_NormalFlow(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	err := sc.StreamDeviceLogs(ctx, addr.IP.String(), addr.Port, func(line scanner.LogLine) {
+	err := sc.StreamDeviceLogs(ctx, addr.IP.String(), addr.Port, "", func(line scanner.LogLine) {
 		mu.Lock()
 		received = append(received, line)
 		n := len(received)
@@ -108,7 +108,7 @@ func TestStreamDeviceLogs_403(t *testing.T) {
 	reg, _ := registry.Open(t.TempDir() + "/devices.json")
 	sc := scanner.New(reg)
 	addr := srv.Listener.Addr().(*net.TCPAddr)
-	err := sc.StreamDeviceLogs(context.Background(), addr.IP.String(), addr.Port, func(_ scanner.LogLine) {})
+	err := sc.StreamDeviceLogs(context.Background(), addr.IP.String(), addr.Port, "", func(_ scanner.LogLine) {})
 	if err == nil || !strings.Contains(err.Error(), "log streaming disabled") {
 		t.Fatalf("want disabled error, got %v", err)
 	}
@@ -128,7 +128,7 @@ func TestStreamDeviceLogs_ContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	err := sc.StreamDeviceLogs(ctx, addr.IP.String(), addr.Port, func(_ scanner.LogLine) {})
+	err := sc.StreamDeviceLogs(ctx, addr.IP.String(), addr.Port, "", func(_ scanner.LogLine) {})
 	if err != nil {
 		// We accept context.Canceled as the expected outcome; nil is also OK if reader exits cleanly.
 		if !strings.Contains(err.Error(), "context canceled") {
