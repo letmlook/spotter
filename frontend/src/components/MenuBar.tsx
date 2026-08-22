@@ -4,7 +4,7 @@ import { useMenu } from '../state/MenuContext';
 import { useDevices } from '../state/DeviceContext';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useI18n } from '../state/I18nContext';
-import { useTheme, ThemeName } from '../state/ThemeContext';
+import { useTheme } from '../state/ThemeContext';
 import { ClearRegistry } from '../../wailsjs/go/main/App';
 import { Quit } from '../../wailsjs/runtime/runtime';
 import type { Locale } from '../i18n/dictionaries';
@@ -44,7 +44,7 @@ export default function MenuBar() {
   const { refresh } = useDevices();
   const actions = useDeviceActions();
   const { t, locale, setLocale } = useI18n();
-  const { theme, setTheme } = useTheme();
+  const { mode, setMode } = useTheme();
   const [modalApi, contextHolder] = Modal.useModal();
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -71,8 +71,9 @@ export default function MenuBar() {
   const viewMenu: MenuItemSpec[] = [
     { key: 'refresh', label: t('menu.view.refresh'), shortcut: 'F5', onClick: () => { actions.refresh().then(refresh); } },
     { key: 'theme', label: t('menu.view.theme'), children: [
-      { key: 'theme-dark', label: t('menu.view.theme.dark'), onClick: () => setTheme('dark'), selected: theme === 'dark' },
-      { key: 'theme-light', label: t('menu.view.theme.light'), onClick: () => setTheme('light'), selected: theme === 'light' },
+      { key: 'theme-dark', label: t('menu.view.theme.dark'), onClick: () => setMode('dark'), selected: mode === 'dark' },
+      { key: 'theme-light', label: t('menu.view.theme.light'), onClick: () => setMode('light'), selected: mode === 'light' },
+      { key: 'theme-system', label: t('menu.view.theme.system'), onClick: () => setMode('system'), selected: mode === 'system' },
     ]},
     { key: 'language', label: t('menu.view.language'), children: [
       { key: 'lang-en', label: t('menu.view.language.en'), onClick: () => setLocale('en'), selected: locale === 'en' },
