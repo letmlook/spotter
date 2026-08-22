@@ -20,6 +20,13 @@
 /build/bin/
 /frontend/dist/
 /frontend/wailsjs/
+# TypeScript / Vite build artefacts produced by `wails build` next to
+# the user's sources. None of these are needed at runtime; they only
+# show up because tsc and Vite emit them in the project root.
+/frontend/*.md5
+/frontend/*.tsbuildinfo
+/frontend/vite.config.d.ts
+/frontend/vite.config.js
 
 # IDE
 .vscode/
