@@ -14,6 +14,7 @@ import { I18nProvider, useI18n } from './state/I18nContext';
 import { ThemeProvider, useTheme } from './state/ThemeContext';
 
 function AppInner() {
+  const { t } = useI18n();
   const handleUnknownDevice = useCallback((payload: unknown) => {
     const data = payload as {
       Info?: { basic?: { hostname?: string }; jetson?: { model?: string } };
@@ -25,26 +26,22 @@ function AppInner() {
     const ip = data?.IP;
     const port = data?.Port;
     const descParts: string[] = [];
-    if (hostname) descParts.push(`hostname: ${hostname}`);
-    if (model) descParts.push(`model: ${model}`);
-    if (ip) descParts.push(`ip: ${ip}${port ? ':' + port : ''}`);
+    if (hostname) descParts.push(`${t('notif.newdev.hostname')}: ${hostname}`);
+    if (model) descParts.push(`${t('notif.newdev.model')}: ${model}`);
+    if (ip) descParts.push(`${t('notif.newdev.ip')}: ${ip}${port ? ':' + port : ''}`);
     notification.info({
-      message: 'New device discovered',
-      description: descParts.length ? descParts.join(' | ') : 'A new device has been discovered on the network.',
+      message: t('notif.newdev.title'),
+      description: descParts.length ? descParts.join(' | ') : t('notif.newdev.fallback'),
       placement: 'bottomRight',
     });
-  }, []);
+  }, [t]);
   useWailsEvents(handleUnknownDevice);
 
-  // Register the one-click scan trigger so menu items can fire it.
   const { setTriggerScan } = useMenu();
   useEffect(() => {
     setTriggerScan(async () => { await ScanSubnet(''); });
   }, [setTriggerScan]);
 
-  // AntD ConfigProvider needs to react to theme changes. The
-  // darkAlgorithm / defaultAlgorithm branches re-tokenise every
-  // AntD component (Modal, Dropdown, Form, Button, etc.).
   const { theme: themeName } = useTheme();
   const algorithm = useMemo(
     () => (themeName === 'light' ? antdTheme.defaultAlgorithm : antdTheme.darkAlgorithm),

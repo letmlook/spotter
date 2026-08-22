@@ -1,7 +1,9 @@
 import { useDevices } from '../state/DeviceContext';
+import { useI18n } from '../state/I18nContext';
 
 export default function StatusBar() {
   const { state } = useDevices();
+  const { t } = useI18n();
   const online = state.devices.filter((d) => d.online).length;
   const total = state.devices.length;
   return (
@@ -14,8 +16,8 @@ export default function StatusBar() {
         fontSize: 12, color: 'var(--text-secondary)',
       }}
     >
-      {online} online / {total} total
-      {state.loading && <span style={{ marginLeft: 12 }}>refreshing…</span>}
+      {t('status.count', { online: String(online), total: String(total) })}
+      {state.loading && <span style={{ marginLeft: 12 }}>{t('status.refreshing')}</span>}
     </div>
   );
 }

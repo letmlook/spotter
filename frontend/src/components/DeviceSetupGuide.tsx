@@ -23,11 +23,6 @@ function CodeBlock({ children }: { children: string }) {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: 12,
         color: 'var(--text-primary)',
-        // pre-wrap preserves newlines + indentation but allows long
-        // single lines (e.g. the deploy.ps1 with -Arch flag) to wrap
-        // instead of forcing the parent to grow. wordBreak/overflowWrap
-        // ensure even unbreakable runs (long paths, no spaces) still
-        // wrap inside the container.
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         overflowWrap: 'anywhere',
@@ -53,6 +48,8 @@ function CodeBlock({ children }: { children: string }) {
 
 export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProps) {
   const { t } = useI18n();
+  const installerWritesPath = '/usr/local/bin/spotterd';
+  const addByIpMenu = t('empty.add.shortcut');
   return (
     <Modal
       open={open}
@@ -91,10 +88,10 @@ export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProp
                   type="success"
                   showIcon
                   style={{ marginBottom: 12 }}
-                  message="Recommended: one-shot deploy script"
+                  message={t('guide.recommended')}
                   description={
                     <Space direction="vertical" size={4}>
-                      <span>From your dev machine, run:</span>
+                      <span>{t('guide.from_dev')}</span>
                       <CodeBlock>{`# macOS / Linux — SSH key auth (preferred, no password)
 ./scripts/deploy.sh <user> <ip>
 
@@ -106,36 +103,33 @@ export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProp
 
 # Windows PowerShell — password auth
 .\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip>`}</CodeBlock>
-                      <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
+                      <span>{t('guide.script_does')}</span>
                     </Space>
                   }
                 />
                 <Paragraph style={{ marginTop: 8 }}>
-                  <Text strong>Or, do it by hand:</Text>
+                  <Text strong>{t('guide.hand')}</Text>
                 </Paragraph>
 
                 <Paragraph style={{ marginTop: 8 }}>
-                  <Text strong>Step 1 —</Text> Build the arm64 binary:
+                  <Text strong>{t('guide.step1.arm64')}</Text>
                 </Paragraph>
                 <CodeBlock>{`make agent-linux-arm64`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Step 2 —</Text> Copy the binary, systemd unit, and install
-                  script to the target:
+                  <Text strong>{t('guide.step2')}</Text>
                 </Paragraph>
                 <CodeBlock>{`scp bin/spotterd-linux-arm64   user@<device>:/tmp/spotterd
 scp scripts/spotterd.service    user@<device>:/tmp/spotterd.service
 scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Step 3 —</Text> Run the installer:
+                  <Text strong>{t('guide.step3')}</Text>
                 </Paragraph>
                 <CodeBlock>{`ssh user@<device> sudo bash /tmp/install.sh`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  The installer writes <Text code>/usr/local/bin/spotterd</Text>, generates a
-                  device_id, and enables the systemd unit. The device should appear in the
-                  GUI within ~30 seconds.
+                  {t('guide.installer_writes', { path: installerWritesPath })}
                 </Paragraph>
               </>
             ),
@@ -149,10 +143,10 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
                   type="success"
                   showIcon
                   style={{ marginBottom: 12 }}
-                  message="Recommended: one-shot deploy script"
+                  message={t('guide.recommended')}
                   description={
                     <Space direction="vertical" size={4}>
-                      <span>From your dev machine, run:</span>
+                      <span>{t('guide.from_dev')}</span>
                       <CodeBlock>{`# macOS / Linux — SSH key auth (preferred, no password)
 ./scripts/deploy.sh <user> <ip> amd64
 
@@ -164,36 +158,33 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
 
 # Windows PowerShell — password auth
 .\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip> -Arch amd64`}</CodeBlock>
-                      <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
+                      <span>{t('guide.script_does')}</span>
                     </Space>
                   }
                 />
                 <Paragraph style={{ marginTop: 8 }}>
-                  <Text strong>Or, do it by hand:</Text>
+                  <Text strong>{t('guide.hand')}</Text>
                 </Paragraph>
 
                 <Paragraph style={{ marginTop: 8 }}>
-                  <Text strong>Step 1 —</Text> Build the amd64 binary:
+                  <Text strong>{t('guide.step1.amd64')}</Text>
                 </Paragraph>
                 <CodeBlock>{`make agent-linux-x64`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Step 2 —</Text> Copy the binary, systemd unit, and install
-                  script to the target:
+                  <Text strong>{t('guide.step2')}</Text>
                 </Paragraph>
                 <CodeBlock>{`scp bin/spotterd-linux-x64     user@<device>:/tmp/spotterd
 scp scripts/spotterd.service    user@<device>:/tmp/spotterd.service
 scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Step 3 —</Text> Run the installer:
+                  <Text strong>{t('guide.step3')}</Text>
                 </Paragraph>
                 <CodeBlock>{`ssh user@<device> sudo bash /tmp/install.sh`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  The installer writes <Text code>/usr/local/bin/spotterd</Text>, generates a
-                  device_id, and enables the systemd unit. The device should appear in the
-                  GUI within ~30 seconds.
+                  {t('guide.installer_writes', { path: installerWritesPath })}
                 </Paragraph>
               </>
             ),
@@ -204,19 +195,17 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
             children: (
               <>
                 <Paragraph style={{ marginTop: 8 }}>
-                  <Text strong>On the device,</Text> confirm spotterd is running:
+                  <Text strong>{t('guide.on_device')}</Text> {t('guide.confirm_running')}
                 </Paragraph>
                 <CodeBlock>{`systemctl status spotterd
 curl -s http://127.0.0.1:9999/healthz`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Multicast blocked?</Text> If the device does not appear
-                  automatically, use the <Text strong>Tools → Add device by IP</Text> menu and
-                  enter the device IP and port <Text code>9999</Text> manually.
+                  <Text strong>{t('guide.multicast_blocked')}</Text> {t('guide.add_by_ip_hint', { menu: addByIpMenu, port: '9999' })}
                 </Paragraph>
 
                 <Paragraph style={{ marginTop: 12 }}>
-                  <Text strong>Uninstall</Text> (if you ever need to remove the agent):
+                  <Text strong>{t('guide.uninstall_hint')}</Text>
                 </Paragraph>
                 <CodeBlock>{`ssh user@<device> sudo bash /tmp/uninstall.sh`}</CodeBlock>
               </>

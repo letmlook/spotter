@@ -1,9 +1,11 @@
 import { Empty, Input } from 'antd';
 import { useDevices } from '../state/DeviceContext';
+import { useI18n } from '../state/I18nContext';
 import DeviceRow from './DeviceRow';
 
 export default function DeviceList() {
   const { state, dispatch } = useDevices();
+  const { t } = useI18n();
   const filtered = state.devices.filter((d) => {
     if (!state.searchQuery) return true;
     const q = state.searchQuery.toLowerCase();
@@ -16,7 +18,7 @@ export default function DeviceList() {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ padding: '8px 12px' }}>
         <Input.Search
-          placeholder="Search devices"
+          placeholder={t('list.search.placeholder')}
           allowClear
           size="small"
           value={state.searchQuery}
@@ -27,7 +29,7 @@ export default function DeviceList() {
         {filtered.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={state.devices.length === 0 ? 'No devices' : 'No matches'}
+            description={state.devices.length === 0 ? t('list.empty') : t('list.no_matches')}
             style={{ marginTop: 24 }}
           />
         ) : (
