@@ -40,13 +40,13 @@ func (EventUnknownDeviceDiscovered) Tag() string { return "unknown-device" }
 
 // Options for configuring a Scanner.
 type Options struct {
-	HTTPClient     *http.Client
-	PollInterval   time.Duration
-	McastInterval  time.Duration
-	OnEvent        func(Event)
-	Logger         *slog.Logger
+	HTTPClient    *http.Client
+	PollInterval  time.Duration
+	McastInterval time.Duration
+	OnEvent       func(Event)
+	Logger        *slog.Logger
 	// DevicePort is the spotterd port the subnet scanner probes. Defaults to 9999.
-	DevicePort int
+	DevicePort     int
 	MulticastGroup string
 	ClientSenderID string
 }

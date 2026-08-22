@@ -37,6 +37,7 @@ var uiFS embed.FS
 // appIcon is the PNG payload used by the macOS "About" dialog. The
 // .icns file is generated separately and embedded into the .app bundle
 // by Wails via build/darwin/iconfile.icns (see build/darwin/Info.plist).
+//
 //go:embed build/appicon.png
 var appIcon []byte
 
