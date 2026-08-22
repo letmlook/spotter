@@ -6,6 +6,7 @@ import {
   Quit,
   WindowGetPosition,
 } from '../../wailsjs/runtime/runtime';
+import MenuBar from './MenuBar';
 import styles from './TitleBar.module.css';
 
 export default function TitleBar() {
@@ -17,8 +18,6 @@ export default function TitleBar() {
       if (!draggingRef.current) return;
       const dx = e.screenX - startRef.current.x;
       const dy = e.screenY - startRef.current.y;
-      // Use Wails runtime to set window position. We import dynamically
-      // to avoid SSR / circular issues.
       import('../../wailsjs/runtime/runtime').then(({ WindowSetPosition }) => {
         WindowSetPosition(startRef.current.winX + dx, startRef.current.winY + dy);
       });
@@ -33,7 +32,6 @@ export default function TitleBar() {
   }, []);
 
   const onMouseDown = async (e: React.MouseEvent) => {
-    // Only left button.
     if (e.button !== 0) return;
     draggingRef.current = true;
     const pos = await WindowGetPosition();
@@ -52,6 +50,7 @@ export default function TitleBar() {
         </svg>
         <span className={styles.title}>Spotter</span>
       </div>
+      <MenuBar />
       <div
         className={styles.middle}
         onMouseDown={onMouseDown}

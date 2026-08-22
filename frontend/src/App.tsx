@@ -1,12 +1,17 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { notification } from 'antd';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import DetailPanel from './components/DetailPanel';
 import StatusBar from './components/StatusBar';
+import DeviceSetupGuide from './components/DeviceSetupGuide';
+import AddDeviceByIPDialog from './components/AddDeviceByIPDialog';
+import AboutDialog from './components/AboutDialog';
 import { useWailsEvents } from './hooks/useWailsEvents';
+import { useMenu, MenuProvider } from './state/MenuContext';
+import { ScanSubnet } from '../wailsjs/go/main/App';
 
-export default function App() {
+function AppInner() {
   const handleUnknownDevice = useCallback((payload: unknown) => {
     const data = payload as {
       Info?: { basic?: { hostname?: string }; jetson?: { model?: string } };
@@ -28,6 +33,14 @@ export default function App() {
     });
   }, []);
   useWailsEvents(handleUnknownDevice);
+
+  // Register the scan trigger so menu items can invoke a one-click
+  // scan without prop-drilling.
+  const { setTriggerScan } = useMenu();
+  useEffect(() => {
+    setTriggerScan(async () => { await ScanSubnet(''); });
+  }, [setTriggerScan]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <TitleBar />
@@ -38,6 +51,27 @@ export default function App() {
           <StatusBar />
         </main>
       </div>
+
+      {/* Global modals — controlled via MenuContext. */}
+      <DeviceSetupGuideHost />
+      <AddDeviceByIPDialog />
+      <AboutDialog />
     </div>
+  );
+}
+
+// DeviceSetupGuide owns its own modal state but we need to bind it
+// to MenuContext.modal === 'setup-guide'. A small host wrapper
+// keeps the modals colocated with the provider.
+function DeviceSetupGuideHost() {
+  const { modal, closeModal } = useMenu();
+  return <DeviceSetupGuide open={modal === 'setup-guide'} onClose={closeModal} />;
+}
+
+export default function App() {
+  return (
+    <MenuProvider>
+      <AppInner />
+    </MenuProvider>
   );
 }

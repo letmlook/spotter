@@ -1,32 +1,28 @@
-import { useState } from 'react';
-import { Empty, Typography, Button, Space } from 'antd';
+import { Empty, Typography, Button } from 'antd';
 import { BookOutlined } from '@ant-design/icons';
-import DeviceSetupGuide from './DeviceSetupGuide';
+import { useMenu } from '../state/MenuContext';
 
 export default function EmptyState() {
-  const [guideOpen, setGuideOpen] = useState(false);
-
+  const { openModal } = useMenu();
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No device selected. Use the sidebar Scan / Add buttons."
+        description="No device selected."
       >
-        <Space direction="vertical" size={12} align="center">
-          <Typography.Text type="secondary">
-            Scan auto-detects your local subnet. Add by IP for manual entry.
-            <br />
-            Devices already running spotterd are also discovered via multicast.
-          </Typography.Text>
-          <Button
-            icon={<BookOutlined />}
-            onClick={() => setGuideOpen(true)}
-          >
-            How to install spotterd on a device
-          </Button>
-        </Space>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          Use <strong>Tools → Scan local subnet</strong> to discover devices
+          on your LAN, or <strong>Tools → Add device by IP</strong> to register one manually.
+          <br />
+          Devices already running spotterd are also discovered automatically via multicast.
+        </Typography.Paragraph>
+        <Button
+          icon={<BookOutlined />}
+          onClick={() => openModal('setup-guide')}
+        >
+          How to install spotterd on a device
+        </Button>
       </Empty>
-      <DeviceSetupGuide open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }
