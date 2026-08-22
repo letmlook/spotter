@@ -27,10 +27,11 @@ const defaultListenAddr = "0.0.0.0:9999"
 const defaultMulticastGroup = "239.255.42.42:9999"
 
 type tomlConfig struct {
-	DeviceID       string `toml:"device_id"`
-	ListenAddr     string `toml:"listen_addr"`
-	MulticastGroup string `toml:"multicast_group"`
-	AgentVersion   string `toml:"agent_version"`
+	DeviceID           string `toml:"device_id"`
+	ListenAddr         string `toml:"listen_addr"`
+	MulticastGroup     string `toml:"multicast_group"`
+	AgentVersion       string `toml:"agent_version"`
+	EnablePowerActions bool   `toml:"enable_power_actions"`
 }
 
 func main() {
@@ -61,10 +62,11 @@ func main() {
 	}
 
 	agent, err := agentd.New(agentd.Config{
-		DeviceID:       cfg.DeviceID,
-		ListenAddr:     cfg.ListenAddr,
-		MulticastGroup: cfg.MulticastGroup,
-		AgentVersion:   cfg.AgentVersion,
+		DeviceID:           cfg.DeviceID,
+		ListenAddr:         cfg.ListenAddr,
+		MulticastGroup:     cfg.MulticastGroup,
+		AgentVersion:       cfg.AgentVersion,
+		EnablePowerActions: cfg.EnablePowerActions,
 	}, log)
 	if err != nil {
 		log.Error("create agent", slog.String("err", err.Error()))

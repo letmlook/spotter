@@ -9,10 +9,11 @@ import (
 
 // Config holds the agent's runtime settings.
 type Config struct {
-	DeviceID       string
-	ListenAddr     string
-	MulticastGroup string
-	AgentVersion   string
+	DeviceID           string
+	ListenAddr         string
+	MulticastGroup     string
+	AgentVersion       string
+	EnablePowerActions bool // opt-in: allow POST /api/v1/reboot & /shutdown
 }
 
 // Agent owns the cached DeviceInfo and exposes it to the HTTP/UDP layers.
