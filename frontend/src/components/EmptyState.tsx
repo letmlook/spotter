@@ -1,26 +1,28 @@
 import { Empty, Typography, Button } from 'antd';
 import { BookOutlined } from '@ant-design/icons';
 import { useMenu } from '../state/MenuContext';
+import { useI18n } from '../state/I18nContext';
 
 export default function EmptyState() {
   const { openModal } = useMenu();
+  const { t } = useI18n();
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No device selected."
+        description={t('empty.title')}
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          Use <strong>Tools → Scan local subnet</strong> to discover devices
-          on your LAN, or <strong>Tools → Add device by IP</strong> to register one manually.
-          <br />
-          Devices already running spotterd are also discovered automatically via multicast.
+          {t('empty.body', {
+            scan: t('empty.scan.shortcut'),
+            add: t('empty.add.shortcut'),
+          })}
         </Typography.Paragraph>
         <Button
           icon={<BookOutlined />}
           onClick={() => openModal('setup-guide')}
         >
-          How to install spotterd on a device
+          {t('empty.cta')}
         </Button>
       </Empty>
     </div>

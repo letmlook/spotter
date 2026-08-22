@@ -1,5 +1,6 @@
 import { Modal, Typography, Alert, Tabs, Space } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
+import { useI18n } from '../state/I18nContext';
 
 const { Paragraph, Text } = Typography;
 
@@ -8,15 +9,14 @@ interface DeviceSetupGuideProps {
   onClose: () => void;
 }
 
-// Copyable code block — clicking the icon copies the contents.
-function CodeBlock({ children }: { children: string }) {
+function CodeBlock({ children, dark = true }: { children: string; dark?: boolean }) {
   const text = children.replace(/\n$/, '');
   return (
     <div
       style={{
         position: 'relative',
-        background: '#1a1a1a',
-        border: '1px solid #303030',
+        background: dark ? '#1a1a1a' : 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
         borderRadius: 4,
         padding: '8px 36px 8px 12px',
         margin: '4px 0',
@@ -33,7 +33,7 @@ function CodeBlock({ children }: { children: string }) {
           top: 8,
           right: 8,
           cursor: 'pointer',
-          color: '#888',
+          color: 'var(--text-secondary)',
         }}
         onClick={() => navigator.clipboard.writeText(text)}
       />
@@ -43,32 +43,29 @@ function CodeBlock({ children }: { children: string }) {
 }
 
 export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProps) {
+  const { t } = useI18n();
   return (
     <Modal
       open={open}
       onCancel={onClose}
       footer={null}
-      title="How to install spotterd on a device"
+      title={t('modal.guide.title')}
       width={680}
     >
       <Paragraph>
-        <Text>
-          spotterd must be installed on each target device manually — the GUI only
-          discovers and displays devices, it does not deploy or manage the agent.
-          Run the steps below from your development machine.
-        </Text>
+        <Text>{t('modal.guide.body')}</Text>
       </Paragraph>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="Prerequisites"
+        message={t('modal.guide.prereq')}
         description={
           <Space direction="vertical" size={2}>
-            <span>· Target device runs Linux with systemd (Ubuntu / Jetson / Debian / RHEL)</span>
-            <span>· Target device is on the same L2 network as the GUI (for UDP multicast)</span>
-            <span>· SSH access to the target as a sudo-capable user</span>
+            <span>· {t('modal.guide.prereq.1')}</span>
+            <span>· {t('modal.guide.prereq.2')}</span>
+            <span>· {t('modal.guide.prereq.3')}</span>
           </Space>
         }
       />
@@ -78,7 +75,7 @@ export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProp
         items={[
           {
             key: 'arm64',
-            label: 'arm64 (Jetson / SBC)',
+            label: t('modal.guide.tab.arm64'),
             children: (
               <>
                 <Alert
@@ -136,7 +133,7 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
           },
           {
             key: 'amd64',
-            label: 'amd64 (server / PC)',
+            label: t('modal.guide.tab.amd64'),
             children: (
               <>
                 <Alert
@@ -194,7 +191,7 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
           },
           {
             key: 'verify',
-            label: 'Verify / troubleshoot',
+            label: t('modal.guide.tab.verify'),
             children: (
               <>
                 <Paragraph style={{ marginTop: 8 }}>
@@ -205,8 +202,8 @@ curl -s http://127.0.0.1:9999/healthz`}</CodeBlock>
 
                 <Paragraph style={{ marginTop: 12 }}>
                   <Text strong>Multicast blocked?</Text> If the device does not appear
-                  automatically, use the sidebar <Text strong>Add</Text> button and enter
-                  the device IP and port <Text code>9999</Text> manually.
+                  automatically, use the <Text strong>Tools → Add device by IP</Text> menu and
+                  enter the device IP and port <Text code>9999</Text> manually.
                 </Paragraph>
 
                 <Paragraph style={{ marginTop: 12 }}>

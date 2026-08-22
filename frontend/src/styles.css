@@ -1,16 +1,51 @@
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
-body { background: #141414; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; }
+body {
+  font-family: -apple-system, system-ui, sans-serif;
+  overflow: hidden;
+  transition: background-color 0.2s, color 0.2s;
+}
 
-/* Modern, slim dark scrollbar (WebKit + Firefox). Only shows when an
-   internal container has overflow:auto. Body itself never scrolls. */
+/* Theme variables — set on :root via the [data-theme] attribute
+   managed by ThemeContext. Components should reference these via
+   var(--…) so theme switching actually repaints. */
+:root[data-theme="dark"] {
+  --bg-app: #0a0a0a;
+  --bg-main: #141414;
+  --bg-elevated: #1a1a1a;
+  --bg-hover: #262626;
+  --border: #303030;
+  --text-primary: #ffffff;
+  --text-secondary: #888888;
+  --text-muted: #aaaaaa;
+  --scrollbar-thumb: #303030;
+  --scrollbar-thumb-hover: #484848;
+  --scrollbar-thumb-active: #5a5a5a;
+}
+:root[data-theme="light"] {
+  --bg-app: #f5f5f5;
+  --bg-main: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e6e6e6;
+  --border: #d9d9d9;
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.45);
+  --text-muted: rgba(0, 0, 0, 0.65);
+  --scrollbar-thumb: #d9d9d9;
+  --scrollbar-thumb-hover: #bfbfbf;
+  --scrollbar-thumb-active: #8c8c8c;
+}
+body { background: var(--bg-main); color: var(--text-primary); }
+
+/* Modern, slim scrollbar (WebKit + Firefox) — colors come from
+   theme variables so dark/light both look reasonable. */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: #303030;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
   transition: background 0.15s;
 }
-*::-webkit-scrollbar-thumb:hover { background: #484848; }
-*::-webkit-scrollbar-thumb:active { background: #5a5a5a; }
+*::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+*::-webkit-scrollbar-thumb:active { background: var(--scrollbar-thumb-active); }
 *::-webkit-scrollbar-corner { background: transparent; }
-* { scrollbar-width: thin; scrollbar-color: #303030 transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }

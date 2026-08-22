@@ -2,10 +2,11 @@
   display: flex;
   align-items: center;
   height: 40px;
-  background: #0a0a0a;
-  border-bottom: 1px solid #303030;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border);
   user-select: none;
   flex-shrink: 0;
+  color: var(--text-primary);
 }
 .left {
   display: flex; align-items: center; gap: 8px;
@@ -14,7 +15,7 @@
   -webkit-app-region: no-drag;
 }
 .logo { width: 24px; height: 24px; display: block; }
-.title { color: #fff; font-weight: 600; font-size: 14px; }
+.title { color: var(--text-primary); font-weight: 600; font-size: 14px; }
 .middle {
   flex: 1;
   height: 100%;
@@ -30,9 +31,9 @@
 .btn {
   width: 46px; height: 40px;
   border: 0; background: transparent;
-  color: #aaa; font-size: 14px;
+  color: var(--text-muted); font-size: 14px;
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.btn:hover { background: #1f1f1f; color: #fff; }
+.btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .close:hover { background: #c41a1a; color: #fff; }

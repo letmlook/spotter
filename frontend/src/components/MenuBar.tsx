@@ -3,8 +3,11 @@ import { Dropdown, Modal } from 'antd';
 import { useMenu } from '../state/MenuContext';
 import { useDevices } from '../state/DeviceContext';
 import { useDeviceActions } from '../hooks/useDeviceActions';
+import { useI18n } from '../state/I18nContext';
+import { useTheme, ThemeName } from '../state/ThemeContext';
 import { ClearRegistry } from '../../wailsjs/go/main/App';
 import { Quit } from '../../wailsjs/runtime/runtime';
+import type { Locale } from '../i18n/dictionaries';
 
 interface MenuItemSpec {
   key: string;
@@ -13,6 +16,8 @@ interface MenuItemSpec {
   onClick?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  selected?: boolean;
+  children?: MenuItemSpec[];
 }
 
 type AppRegionStyle = React.CSSProperties & { WebkitAppRegion?: string };
@@ -20,7 +25,7 @@ type AppRegionStyle = React.CSSProperties & { WebkitAppRegion?: string };
 const menuBtnStyle: AppRegionStyle = {
   background: 'transparent',
   border: 'none',
-  color: '#d9d9d9',
+  color: 'var(--text-primary)',
   padding: '0 10px',
   fontSize: 13,
   cursor: 'pointer',
@@ -31,21 +36,23 @@ const menuBtnStyle: AppRegionStyle = {
 
 const menuBtnStyleHover: AppRegionStyle = {
   ...menuBtnStyle,
-  background: '#262626',
+  background: 'var(--bg-hover)',
 };
 
 export default function MenuBar() {
   const { openModal, triggerScan } = useMenu();
   const { refresh } = useDevices();
   const actions = useDeviceActions();
+  const { t, locale, setLocale } = useI18n();
+  const { theme, setTheme } = useTheme();
   const [modalApi, contextHolder] = Modal.useModal();
   const [hovered, setHovered] = useState<string | null>(null);
 
   const onClearRegistry = () =>
     modalApi.confirm({
-      title: 'Clear registry',
-      content: 'Remove every device from the local registry? Devices already running spotterd will be rediscovered automatically.',
-      okText: 'Clear',
+      title: t('notif.clear.confirm.title'),
+      content: t('notif.clear.confirm.body'),
+      okText: t('notif.clear.confirm.ok'),
       okButtonProps: { danger: true },
       onOk: async () => { await ClearRegistry(); await refresh(); },
     });
@@ -53,41 +60,62 @@ export default function MenuBar() {
   const onScan = () => {
     (async () => {
       try { await triggerScan(); await refresh(); }
-      catch (e) { modalApi.error({ title: 'Scan failed', content: String(e) }); }
+      catch (e) { modalApi.error({ title: t('notif.scan.fail'), content: String(e) }); }
     })();
   };
 
   const fileMenu: MenuItemSpec[] = [
-    { key: 'quit', label: 'Quit', shortcut: '⌘Q', onClick: Quit },
+    { key: 'quit', label: t('menu.file.quit'), shortcut: '⌘Q', onClick: Quit },
   ];
 
   const viewMenu: MenuItemSpec[] = [
-    { key: 'refresh', label: 'Refresh', shortcut: 'F5', onClick: () => { actions.refresh().then(refresh); } },
-    { key: 'clear', label: 'Clear registry…', onClick: onClearRegistry, danger: true },
+    { key: 'refresh', label: t('menu.view.refresh'), shortcut: 'F5', onClick: () => { actions.refresh().then(refresh); } },
+    { key: 'clear', label: t('menu.view.clear'), onClick: onClearRegistry, danger: true },
+    { key: 'theme', label: t('menu.view.theme'), children: [
+      { key: 'theme-dark', label: t('menu.view.theme.dark'), onClick: () => setTheme('dark'), selected: theme === 'dark' },
+      { key: 'theme-light', label: t('menu.view.theme.light'), onClick: () => setTheme('light'), selected: theme === 'light' },
+    ]},
+    { key: 'language', label: t('menu.view.language'), children: [
+      { key: 'lang-en', label: t('menu.view.language.en'), onClick: () => setLocale('en'), selected: locale === 'en' },
+      { key: 'lang-zh', label: t('menu.view.language.zh'), onClick: () => setLocale('zh'), selected: locale === 'zh' },
+    ]},
   ];
 
   const toolsMenu: MenuItemSpec[] = [
-    { key: 'scan', label: 'Scan local subnet', shortcut: '⌘L', onClick: onScan },
-    { key: 'add', label: 'Add device by IP…', shortcut: '⌘I', onClick: () => openModal('add-device') },
-    { key: 'guide', label: 'Device setup guide…', shortcut: 'F1', onClick: () => openModal('setup-guide') },
+    { key: 'scan', label: t('menu.tools.scan'), shortcut: '⌘L', onClick: onScan },
+    { key: 'add', label: t('menu.tools.add'), shortcut: '⌘I', onClick: () => openModal('add-device') },
+    { key: 'guide', label: t('menu.tools.guide'), shortcut: 'F1', onClick: () => openModal('setup-guide') },
   ];
 
   const helpMenu: MenuItemSpec[] = [
-    { key: 'about', label: 'About Spotter…', onClick: () => openModal('about') },
+    { key: 'about', label: t('menu.help.about'), onClick: () => openModal('about') },
   ];
 
-  const toAntdItems = (items: MenuItemSpec[]) =>
-    items.map((it) => ({
-      key: it.key,
-      label: (
+  const toAntdItems = (items: MenuItemSpec[]): any[] =>
+    items.map((it) => {
+      const hasChildren = Array.isArray(it.children) && it.children.length > 0;
+      const label = (
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-          <span style={{ color: it.danger ? '#ff7875' : undefined }}>{it.label}</span>
-          {it.shortcut && <span style={{ color: '#888', fontSize: 11 }}>{it.shortcut}</span>}
+          <span style={{ color: it.danger ? '#ff7875' : undefined, fontWeight: it.selected ? 600 : undefined }}>
+            {it.label}
+          </span>
+          {it.shortcut && <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{it.shortcut}</span>}
         </span>
-      ),
-      onClick: it.onClick,
-      disabled: it.disabled,
-    }));
+      );
+      if (hasChildren) {
+        return {
+          key: it.key,
+          label,
+          children: toAntdItems(it.children!),
+        };
+      }
+      return {
+        key: it.key,
+        label,
+        onClick: it.onClick,
+        disabled: it.disabled,
+      };
+    });
 
   const makeTrigger = (label: string, id: string) => (
     <button
@@ -108,16 +136,16 @@ export default function MenuBar() {
         WebkitAppRegion: 'no-drag',
       } as AppRegionStyle}>
         <Dropdown menu={{ items: toAntdItems(fileMenu) }} trigger={['click']} placement="bottomLeft">
-          {makeTrigger('File', 'file')}
+          {makeTrigger(t('menu.file'), 'file')}
         </Dropdown>
         <Dropdown menu={{ items: toAntdItems(viewMenu) }} trigger={['click']} placement="bottomLeft">
-          {makeTrigger('View', 'view')}
+          {makeTrigger(t('menu.view'), 'view')}
         </Dropdown>
         <Dropdown menu={{ items: toAntdItems(toolsMenu) }} trigger={['click']} placement="bottomLeft">
-          {makeTrigger('Tools', 'tools')}
+          {makeTrigger(t('menu.tools'), 'tools')}
         </Dropdown>
         <Dropdown menu={{ items: toAntdItems(helpMenu) }} trigger={['click']} placement="bottomLeft">
-          {makeTrigger('Help', 'help')}
+          {makeTrigger(t('menu.help'), 'help')}
         </Dropdown>
       </div>
     </>

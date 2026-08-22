@@ -1,10 +1,12 @@
 import { Modal, Typography, Space } from 'antd';
 import { useMenu } from '../state/MenuContext';
+import { useI18n } from '../state/I18nContext';
 
 const { Title, Paragraph, Text } = Typography;
 
 export default function AboutDialog() {
   const { modal, closeModal } = useMenu();
+  const { t } = useI18n();
   return (
     <Modal
       open={modal === 'about'}
@@ -22,23 +24,23 @@ export default function AboutDialog() {
           <circle cx="16" cy="20.75" r="1.75" fill="#69b1ff"/>
           <circle cx="16" cy="20.75" r="0.75" fill="#0a0a0a"/>
         </svg>
-        <Title level={3} style={{ marginTop: 12, marginBottom: 0 }}>Spotter</Title>
+        <Title level={3} style={{ marginTop: 12, marginBottom: 0 }}>{t('app.title')}</Title>
         <Text type="secondary">v0.1.0</Text>
       </div>
 
       <Paragraph style={{ marginTop: 20, textAlign: 'center' }}>
-        LAN device discovery for Linux devices
+        {t('modal.about.tagline')}
         <br />
-        (ARM64 SBCs such as Jetson, plus AMD64 servers and workstations).
+        {t('modal.about.tagline2')}
       </Paragraph>
 
       <Space direction="vertical" size={4} style={{ width: '100%', fontSize: 12 }}>
-        <div><Text type="secondary">Client:</Text> Windows · macOS · Linux</div>
-        <div><Text type="secondary">Agent:</Text> Linux (systemd) — arm64 · amd64</div>
+        <div><Text type="secondary">{t('modal.about.client')}:</Text> Windows · macOS · Linux</div>
+        <div><Text type="secondary">{t('modal.about.agent')}:</Text> Linux (systemd) — arm64 · amd64</div>
       </Space>
 
       <Paragraph style={{ marginTop: 20, marginBottom: 0, textAlign: 'center', fontSize: 11 }}>
-        <Text type="secondary">© 2026 Spotter Dev</Text>
+        <Text type="secondary">{t('modal.about.copyright')}</Text>
       </Paragraph>
     </Modal>
   );

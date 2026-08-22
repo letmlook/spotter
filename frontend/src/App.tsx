@@ -1,5 +1,5 @@
-import { useCallback, useEffect } from 'react';
-import { notification } from 'antd';
+import { useCallback, useEffect, useMemo } from 'react';
+import { ConfigProvider, notification, theme as antdTheme } from 'antd';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import DetailPanel from './components/DetailPanel';
@@ -10,6 +10,8 @@ import AboutDialog from './components/AboutDialog';
 import { useWailsEvents } from './hooks/useWailsEvents';
 import { useMenu, MenuProvider } from './state/MenuContext';
 import { ScanSubnet } from '../wailsjs/go/main/App';
+import { I18nProvider, useI18n } from './state/I18nContext';
+import { ThemeProvider, useTheme } from './state/ThemeContext';
 
 function AppInner() {
   const handleUnknownDevice = useCallback((payload: unknown) => {
@@ -34,35 +36,45 @@ function AppInner() {
   }, []);
   useWailsEvents(handleUnknownDevice);
 
-  // Register the scan trigger so menu items can invoke a one-click
-  // scan without prop-drilling.
+  // Register the one-click scan trigger so menu items can fire it.
   const { setTriggerScan } = useMenu();
   useEffect(() => {
     setTriggerScan(async () => { await ScanSubnet(''); });
   }, [setTriggerScan]);
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <TitleBar />
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <Sidebar />
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#141414' }}>
-          <DetailPanel />
-          <StatusBar />
-        </main>
-      </div>
+  // AntD ConfigProvider needs to react to theme changes. The
+  // darkAlgorithm / defaultAlgorithm branches re-tokenise every
+  // AntD component (Modal, Dropdown, Form, Button, etc.).
+  const { theme: themeName } = useTheme();
+  const algorithm = useMemo(
+    () => (themeName === 'light' ? antdTheme.defaultAlgorithm : antdTheme.darkAlgorithm),
+    [themeName],
+  );
 
-      {/* Global modals — controlled via MenuContext. */}
-      <DeviceSetupGuideHost />
-      <AddDeviceByIPDialog />
-      <AboutDialog />
-    </div>
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm,
+        token: { colorPrimary: '#1677ff', borderRadius: 6 },
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-main)' }}>
+        <TitleBar />
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          <Sidebar />
+          <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-main)' }}>
+            <DetailPanel />
+            <StatusBar />
+          </main>
+        </div>
+        <DeviceSetupGuideHost />
+        <AddDeviceByIPDialog />
+        <AboutDialog />
+      </div>
+    </ConfigProvider>
   );
 }
 
-// DeviceSetupGuide owns its own modal state but we need to bind it
-// to MenuContext.modal === 'setup-guide'. A small host wrapper
-// keeps the modals colocated with the provider.
 function DeviceSetupGuideHost() {
   const { modal, closeModal } = useMenu();
   return <DeviceSetupGuide open={modal === 'setup-guide'} onClose={closeModal} />;
@@ -70,8 +82,12 @@ function DeviceSetupGuideHost() {
 
 export default function App() {
   return (
-    <MenuProvider>
-      <AppInner />
-    </MenuProvider>
+    <ThemeProvider>
+      <I18nProvider>
+        <MenuProvider>
+          <AppInner />
+        </MenuProvider>
+      </I18nProvider>
+    </ThemeProvider>
   );
 }
