@@ -55,6 +55,13 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.actions.power.disabledHint': 'Enable enable_power_actions on the agent to use this.',
     'detail.actions.power.toast.success': 'Command sent',
 
+    // Execution log panel
+    'log.title': 'Execution Log',
+    'log.streaming': 'live',
+    'log.empty': 'Waiting for log lines…',
+    'log.offline': 'Device is offline. Log stream unavailable.',
+    'log.disabled_offline': 'Offline',
+
     // Cards (BasicCard / NetworkCard / JetsonCard)
     'card.basic.title': 'Basic',
     'card.basic.hostname': 'Hostname',
@@ -199,6 +206,13 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.actions.power.shutdown.confirmOk': '关闭电源',
     'detail.actions.power.disabledHint': '该设备未启用远程电源管理（需在 agent.toml 设置 enable_power_actions = true）。',
     'detail.actions.power.toast.success': '重启命令已发送',
+
+    // 执行日志面板
+    'log.title': '执行日志',
+    'log.streaming': '实时',
+    'log.empty': '等待日志输出…',
+    'log.offline': '设备离线，无法查看日志。',
+    'log.disabled_offline': '离线',
 
     'card.basic.title': '基本信息',
     'card.basic.hostname': '主机名',
