@@ -133,7 +133,7 @@ client 的手动子网扫描用它过滤候选，然后再请求 `/api/v1/info`�
 请求：
 - Headers：`Content-Type` 不要求；无需 body。
 
-响应（200/202，命令已派发）：
+响应（202，命令已派发）：
 ```json
 {
   "status": "scheduled",

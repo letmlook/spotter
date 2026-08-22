@@ -205,9 +205,9 @@ GUI-side registration is required.
 
 - Linux devices with **systemd** only (Ubuntu / Jetson / Debian / RHEL;
   both `arm64` and `amd64`).
-- **No remote command execution** — static info panel only.
+- **No arbitrary remote command execution** — only opt-in remote reboot / shutdown (requires `enable_power_actions = true` in `/etc/spotterd/agent.toml` on the agent). No shell or custom-command channel is provided.
 - UDP multicast is **L2-only** (same VLAN) unless routers forward.
-- HTTP endpoints have **no authentication** — deploy on trusted LANs only.
+- HTTP endpoints have **no authentication** — deploy on trusted LANs only; enabling power actions means any same-subnet client can trigger root-level reboot / poweroff.
 
 ## Architecture
 

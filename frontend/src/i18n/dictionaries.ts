@@ -53,6 +53,7 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.actions.power.shutdown.confirmTitle': 'Shut down {hostname}?',
     'detail.actions.power.shutdown.confirmOk': 'Shut down',
     'detail.actions.power.disabledHint': 'Enable enable_power_actions on the agent to use this.',
+    'detail.actions.power.toast.success': 'Command sent',
 
     // Cards (BasicCard / NetworkCard / JetsonCard)
     'card.basic.title': 'Basic',
@@ -197,6 +198,7 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'detail.actions.power.shutdown.confirmTitle': '即将关闭 {hostname}？',
     'detail.actions.power.shutdown.confirmOk': '关闭电源',
     'detail.actions.power.disabledHint': '该设备未启用远程电源管理（需在 agent.toml 设置 enable_power_actions = true）。',
+    'detail.actions.power.toast.success': '重启命令已发送',
 
     'card.basic.title': '基本信息',
     'card.basic.hostname': '主机名',

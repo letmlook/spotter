@@ -135,7 +135,7 @@ Requests the device to reboot. Only effective when `enable_power_actions = true`
 Request:
 - Headers: no body required.
 
-Response (200/202, scheduled):
+Response (202, scheduled):
 ```json
 {
   "status": "scheduled",
