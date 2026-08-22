@@ -62,8 +62,18 @@ type Action =
 
 function reducer(state: DeviceState, action: Action): DeviceState {
   switch (action.type) {
-    case 'SET_DEVICES':
-      return { ...state, devices: action.devices };
+    case 'SET_DEVICES': {
+      // Auto-select the first device whenever the registry snapshot
+      // refreshes and no selection is set. This makes the GUI drop
+      // directly into BasicCard + NetworkCard + LogSection for
+      // single-device deployments without requiring the user to
+      // click a row first.
+      let nextSelected = state.selectedId
+      if (!nextSelected && action.devices.length > 0) {
+        nextSelected = action.devices[0].device_id
+      }
+      return { ...state, devices: action.devices, selectedId: nextSelected }
+    }
     case 'SELECT': {
       // Drop selection if the previously selected device is gone.
       if (action.id && !state.devices.some((d) => d.device_id === action.id)) {
