@@ -74,6 +74,16 @@ jobs:
           done
           wails version
 
+      - name: Pre-build to populate go.sum
+        # `wails generate module` invokes `go build` against main.go,
+        # and Wails' sub-packages (pkg/options/*, pkg/runtime) trigger
+        # checkouts that aren't yet reflected in the freshly-cloned
+        # go.sum. A `go build` against our cmd/agent first lets Go
+        # write those missing h1 entries into go.sum so the second
+        # `go build` (inside `wails generate`) sees a consistent
+        # module graph.
+        run: go build -o /dev/null ./cmd/agent
+
       - name: Install npm dependencies
         working-directory: frontend
         run: npm ci --no-audit --fund=false

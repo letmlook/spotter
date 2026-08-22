@@ -131,6 +131,13 @@ jobs:
           done
           wails version
 
+      - name: Pre-build to populate go.sum
+        # See go.yml for the rationale: `wails generate module` runs
+        # `go build` against main.go, and Wails sub-packages trigger
+        # module resolutions that aren't yet in go.sum on a fresh
+        # checkout. A first pass `go build` populates go.sum.
+        run: go build -o /dev/null ./cmd/agent
+
       - name: Stage empty frontend/dist for //go:embed
         # `wails generate module` introspects Go types bound through
         # `wails.Run`, which compiles main.go. main.go embeds

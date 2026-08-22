@@ -23,9 +23,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-    defaults:
-      run:
-        working-directory: frontend
+    # No job-level `defaults.run.working-directory` here on purpose:
+    # steps alternate between repo-root (wails generate, mkdir
+    # placeholder) and frontend/ (npm ci, typecheck, vite build).
+    # Each step sets its own working-directory explicitly.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,27 +78,36 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev \
             libxss-dev libsoup-3.0-dev pkg-config
 
+      - name: Pre-build to populate go.sum
+        # See go.yml for the rationale: `wails generate module` runs
+        # `go build` against main.go, and Wails sub-packages trigger
+        # module resolutions that aren't yet in go.sum on a fresh
+        # checkout. A first pass `go build` populates go.sum.
+        run: go build -o /dev/null ./cmd/agent
+
       - name: Install npm dependencies
+        working-directory: frontend
         run: npm ci --no-audit --fund=false
 
-      # See go.yml for the rationale: wails generate needs an existing
-      # frontend/dist (for //go:embed) to introspect Go types, but
-      # typecheck / build cannot finish until wailsjs stubs exist.
-      # Place a dummy dist first, generate, then build for real.
+      # See go.yml for the rationale: wails generate module will run
+      # `go build` against main.go, which embeds `frontend/dist`. Stage
+      # a placeholder so the embed pattern resolves, then run `wails
+      # generate` (which itself produces the wailsjs stubs), then
+      # typecheck / vite-build for real.
       - name: Stage empty frontend/dist for //go:embed
         run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 
       - name: Generate Wails frontend bindings
-        # `wails generate module` looks for `wails.json` (and through
-        # it, the frontend folder) starting at cwd. `wails.json` lives
-        # at the repo root, NOT inside frontend/, so we must run with
-        # the repo as cwd.
+        # Runs from repo root because `wails.json` lives there, not in
+        # frontend/.
         run: wails generate module
 
       - name: Type check
+        working-directory: frontend
         run: npm run typecheck
 
       - name: Production build
+        working-directory: frontend
         run: npm run build
 
       - name: Upload frontend build artifact
