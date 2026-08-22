@@ -10,11 +10,13 @@ export default function EmptyState() {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No device selected. Use the sidebar toolbar to scan a subnet or add by IP."
+        description="No device selected. Use the sidebar Scan / Add buttons."
       >
         <Space direction="vertical" size={12} align="center">
           <Typography.Text type="secondary">
-            Devices already running spotterd are discovered automatically via multicast.
+            Scan auto-detects your local subnet. Add by IP for manual entry.
+            <br />
+            Devices already running spotterd are also discovered via multicast.
           </Typography.Text>
           <Button
             icon={<BookOutlined />}

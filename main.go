@@ -10,9 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -155,11 +158,80 @@ func (a *App) ListDevices() []registry.Entry {
 	return a.reg.List()
 }
 
-// ScanSubnet triggers a manual subnet scan.
+// ScanSubnet triggers a manual subnet scan. If cidr is empty, the
+// first non-loopback IPv4 subnet is auto-detected from the host's
+// network interfaces (RFC1918 ranges preferred). Pass an explicit
+// CIDR to scan something else.
 func (a *App) ScanSubnet(cidr string) error {
+	if cidr == "" {
+		subnets := a.LocalSubnets()
+		if len(subnets) == 0 {
+			return fmt.Errorf("no local subnet detected; pass an explicit CIDR")
+		}
+		cidr = subnets[0]
+		a.logger.Info("auto-detected local subnet", slog.String("cidr", cidr))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	return a.scanner.ScanSubnet(ctx, cidr, 30*time.Second)
+}
+
+// LocalSubnets returns the CIDRs of all non-loopback, up IPv4
+// interfaces on the host, ordered with RFC1918 ranges first
+// (10/8, 172.16/12, 192.168/16) so the most likely LAN segment is
+// at index 0. Link-local 169.254/16 is filtered out. The GUI uses
+// this to pre-fill / auto-trigger subnet scans.
+func (a *App) LocalSubnets() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		a.logger.Error("list interfaces", slog.String("err", err.Error()))
+		return nil
+	}
+	var cidrs []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.To4() == nil {
+				continue
+			}
+			ip := ipnet.IP.To4()
+			// Skip link-local (169.254/16).
+			if ip[0] == 169 && ip[1] == 254 {
+				continue
+			}
+			ones, _ := ipnet.Mask.Size()
+			cidrs = append(cidrs, fmt.Sprintf("%s/%d", ip.Mask(ipnet.Mask), ones))
+		}
+	}
+	sort.SliceStable(cidrs, func(i, j int) bool {
+		return rfc1918Rank(cidrs[i]) < rfc1918Rank(cidrs[j])
+	})
+	return cidrs
+}
+
+// rfc1918Rank returns 0 for RFC1918 (LAN), 1 for everything else.
+// Used by LocalSubnets to put the LAN subnet first.
+func rfc1918Rank(cidr string) int {
+	ip := net.ParseIP(cidr[:strings.IndexByte(cidr, '/')])
+	if ip == nil {
+		return 1
+	}
+	switch {
+	case ip[0] == 10:
+		return 0
+	case ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31:
+		return 0
+	case ip[0] == 192 && ip[1] == 168:
+		return 0
+	}
+	return 1
 }
 
 // RefreshNow forces an immediate poll cycle.
