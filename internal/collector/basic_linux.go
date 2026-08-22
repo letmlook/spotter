@@ -5,6 +5,7 @@ package collector
 import (
 	"bufio"
 	"os"
+	"os/exec"
 	"os/user"
 	"strconv"
 	"strings"
@@ -55,11 +56,19 @@ func readKernel() string {
 }
 
 func readArch() string {
-	b, err := os.ReadFile("/proc/sys/kernel/arch")
+	// /proc/sys/kernel/arch is missing on some minimal / container
+	// kernels (returns empty string). Fall back to `uname -m`, which
+	// is always available via sys_uname.
+	if b, err := os.ReadFile("/proc/sys/kernel/arch"); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return s
+		}
+	}
+	out, err := exec.Command("uname", "-m").Output()
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(b))
+	return strings.TrimSpace(string(out))
 }
 
 func readUptime() int64 {
