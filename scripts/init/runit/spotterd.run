@@ -1,0 +1,13 @@
+#!/bin/sh
+# runit run script for spotterd. Drop into /var/service/spotterd/run
+# (or /etc/runit/spotterd/run + symlink). Tested on Void Linux.
+
+exec 2>&1
+
+if [ -f /etc/spotterd/agent.toml ]; then
+  exec /usr/local/bin/spotterd --config /etc/spotterd/agent.toml --log-level info
+else
+  echo "spotterd: /etc/spotterd/agent.toml missing — run scripts/install.sh first" >&2
+  sleep 5
+  exec /usr/local/bin/spotterd --config /etc/spotterd/agent.toml --log-level info
+fi

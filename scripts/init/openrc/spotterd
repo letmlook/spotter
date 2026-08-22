@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# OpenRC init script for spotterd. Drop into /etc/init.d/ and run
+# `rc-update add spotterd default`. Tested on Alpine 3.x.
+
+name="spotterd"
+description="Spotter LAN device-discovery daemon"
+supervisor=supervise-daemon
+
+command="/usr/local/bin/spotterd"
+command_args="--config /etc/spotterd/agent.toml --log-level info"
+command_user="root:root"
+
+pidfile="/run/${name}.pid"
+output_log="/var/log/${name}.log"
+error_log="/var/log/${name}.err"
+
+depend() {
+  need net
+  after firewall
+}
+
+start_pre() {
+  if [ ! -f /etc/spotterd/agent.toml ]; then
+    eerror "/etc/spotterd/agent.toml missing — run scripts/install.sh first"
+    return 1
+  fi
+}

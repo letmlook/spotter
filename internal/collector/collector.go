@@ -27,5 +27,8 @@ func (c *Collector) Collect(ctx context.Context) (protocol.DeviceInfo, error) {
 	if j := collectJetson(ctx); j != nil {
 		info.Jetson = j
 	}
+	if m := collectMetrics(ctx); m != nil {
+		info.Metrics = m
+	}
 	return info, nil
 }

@@ -13,6 +13,7 @@ type DeviceInfo struct {
 	Jetson         *JetsonInfo     `json:"jetson"`               // nil means "not a Jetson" or probe failed
 	Auth           *AuthInfo       `json:"auth,omitempty"`       // v2: present iff the agent has [auth] enabled
 	LastHeartbeatAt LastHeartbeatAt `json:"last_heartbeat_at"`    // v3: timestamp of last heartbeat
+	Metrics        *Metrics        `json:"metrics,omitempty"`    // v0.5: snapshot of system counters
 }
 
 type BasicInfo struct {
@@ -65,3 +66,17 @@ type AuthInfo struct {
 // agentd/agent.go). Clients show "心跳 Xs 前" based on this field;
 // values older than 5 min trigger the "agent idle" warning state.
 type LastHeartbeatAt string
+
+// Metrics is a snapshot of system counters relevant to spotterd's
+// host. All fields are best-effort: a nil Metrics block means none
+// of the counters could be read. Each pointer field is independently
+// nil-able to permit partial reads (e.g. CPU temp missing on a server
+// with no thermal_zone exposed). Values are deltas since boot for
+// CPUSecondsTotal; absolute for memory and temperature. Clients
+// take the delta across two samples to compute usage %.
+type Metrics struct {
+	CPUSecondsTotal   *float64 `json:"cpu_seconds_total,omitempty"` // cumulative CPU seconds across all cores
+	MemTotalBytes     *uint64  `json:"mem_total_bytes,omitempty"`
+	MemAvailableBytes *uint64  `json:"mem_available_bytes,omitempty"`
+	CPUTempC          *int     `json:"cpu_temp_c,omitempty"` // first thermal_zone reading, centigrade
+}
