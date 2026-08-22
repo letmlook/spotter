@@ -181,17 +181,19 @@ err = wails.Run(opts)
 
 ### 5.1 新写法
 
-```makefile
-WAILS ?= $(shell command -v wails 2>/dev/null)
+````makefile
+WAILS := $(shell command -v wails 2>/dev/null)
 
 client:
-ifdef WAILS
+ifneq ($(WAILS),)
 	$(WAILS) build
 else
 	@echo "warning: wails CLI not found; falling back to 'go build' (will NOT produce a .app bundle on macOS)" >&2
 	$(GO) build $(GOFLAGS) -o bin/spotter-client .
 endif
-```
+````
+
+> 注意：使用 `ifneq ($(WAILS),)` 而不是 `ifdef WAILS`——后者会把空字符串视为"已定义"，导致执行 ` build` 报错。
 
 ### 5.2 行为矩阵
 
@@ -213,7 +215,7 @@ endif
 
 在现有 "Build" 段末尾追加：
 
-```markdown
+````markdown
 ### Build on macOS
 
 ```bash
@@ -226,7 +228,7 @@ open build/bin/Spotter.app
 If `wails` is not on PATH, `make client` falls back to `go build` and
 produces a bare `bin/spotter-client` Mach-O binary (no .app bundle).
 The .app bundle is the recommended way to launch on macOS.
-```
+````
 
 ---
 
