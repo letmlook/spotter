@@ -329,12 +329,21 @@ func rfc1918Rank(cidr string) int {
 	if ip == nil {
 		return 1
 	}
+	// net.ParseIP returns IPv4 in 16-byte (v4-in-v6) form; consult
+	// the trailing four bytes so we read 10.x / 172.16-31.x /
+	// 192.168.x correctly. Without To4 we'd compare against the
+	// high zero bytes of the mapped IPv6 prefix and rank every
+	// RFC1918 subnet as "non-LAN".
+	v4 := ip.To4()
+	if v4 == nil {
+		return 1
+	}
 	switch {
-	case ip[0] == 10:
+	case v4[0] == 10:
 		return 0
-	case ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31:
+	case v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31:
 		return 0
-	case ip[0] == 192 && ip[1] == 168:
+	case v4[0] == 192 && v4[1] == 168:
 		return 0
 	}
 	return 1

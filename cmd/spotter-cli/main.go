@@ -203,12 +203,19 @@ func rfc1918Rank(cidr string) int {
 	if ip == nil {
 		return 1
 	}
+	// net.ParseIP returns IPv4 addresses in 16-byte form (mapped);
+	// the IPv4 bytes live at indices [12..15]. Take To4 so we
+	// always inspect the right slot regardless of input form.
+	v4 := ip.To4()
+	if v4 == nil {
+		return 1
+	}
 	switch {
-	case ip[0] == 10:
+	case v4[0] == 10:
 		return 0
-	case ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31:
+	case v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31:
 		return 0
-	case ip[0] == 192 && ip[1] == 168:
+	case v4[0] == 192 && v4[1] == 168:
 		return 0
 	}
 	return 1
