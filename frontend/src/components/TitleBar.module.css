@@ -10,8 +10,7 @@
 }
 .left {
   display: flex; align-items: center; gap: 8px;
-  padding: 0 12px;
-  width: 130px;
+  padding: 0 8px 0 12px;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
