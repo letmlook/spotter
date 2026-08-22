@@ -80,19 +80,21 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --no-audit --fund=false
 
+      # See go.yml for the rationale: wails generate needs an existing
+      # frontend/dist (for //go:embed) to introspect Go types, but
+      # typecheck / build cannot finish until wailsjs stubs exist.
+      # Place a dummy dist first, generate, then build for real.
+      - name: Stage empty frontend/dist for //go:embed
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
       - name: Generate Wails frontend bindings
         # `wails generate module` looks for `wails.json` (and through
         # it, the frontend folder) starting at cwd. `wails.json` lives
         # at the repo root, NOT inside frontend/, so we must run with
-        # the repo as cwd. Earlier runs with `working-directory:
-        # frontend` failed with "open frontend/wails.json: no such
-        # file or directory".
+        # the repo as cwd.
         run: wails generate module
 
       - name: Type check
-        # `npm run typecheck` is single-project (no references); the
-        # referenced `tsconfig.node.json` sets `composite: true`, which
-        # `tsc -b --noEmit` would reject with TS6310.
         run: npm run typecheck
 
       - name: Production build

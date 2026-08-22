@@ -78,6 +78,17 @@ jobs:
         working-directory: frontend
         run: npm ci --no-audit --fund=false
 
+      # Chicken-and-egg fix: `wails generate module` introspects the
+      # Go types bound through `wails.Run`. To do that, it compiles
+      # main.go, which embeds `frontend/dist` and imports
+      # `frontend/wailsjs/...`. Both must exist when generate runs,
+      # but typecheck / vite-build (which create them) can't run until
+      # the wailsjs stubs are in place. Solution: lay down a dummy
+      # `frontend/dist` so the embed pattern resolves, run `wails
+      # generate`, then real typecheck / build.
+      - name: Stage empty frontend/dist for //go:embed
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
       - name: Generate Wails frontend bindings
         # `wails generate module` looks for `wails.json` (and through
         # it, the frontend folder) starting at cwd. `wails.json` lives
@@ -85,10 +96,14 @@ jobs:
         # the repo as cwd.
         run: wails generate module
 
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
+
       - name: Production build (Vite)
         working-directory: frontend
-        # `npm run build` runs `tsc -b && vite build`. `tsc -b` now sees
-        # the freshly-generated wailsjs/* stubs.
+        # `npm run build` runs `tsc -b && vite build`. Use it directly
+        # now that the wailsjs stubs exist.
         run: npm run build
 
       - name: Upload frontend/dist

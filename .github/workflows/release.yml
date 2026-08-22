@@ -131,21 +131,26 @@ jobs:
           done
           wails version
 
-      - name: Build frontend (so //go:embed frontend/dist resolves)
-        # main.go does `//go:embed all:frontend/dist`. `wails build`
-        # runs `go build` internally, so the embed pattern must resolve
-        # at that point.
+      - name: Stage empty frontend/dist for //go:embed
+        # `wails generate module` introspects Go types bound through
+        # `wails.Run`, which compiles main.go. main.go embeds
+        # `frontend/dist`, so we need *something* in that directory
+        # before `wails generate` is allowed to compile.
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
+      - name: Generate Wails frontend bindings
+        # Produces gitignored frontend/wailsjs/* (Go-side proxy +
+        # runtime stubs). Required by `npm run build`'s `tsc -b`
+        # and by the Go embed / import chain.
+        run: wails generate module
+
+      - name: Build frontend (now that wailsjs stubs exist)
         working-directory: frontend
         run: |
           npm ci --no-audit --fund=false
           npm run build
-
-      - name: Generate Wails frontend bindings
-        # `wails generate module` looks for `wails.json` (and through
-        # it, the frontend folder) starting at cwd. `wails.json` lives
-        # at the repo root, NOT inside frontend/, so we must run with
-        # the repo as cwd.
-        run: wails generate module
+          # Overwrite the .gitkeep placeholder with the real build.
+          rm -f frontend/dist/.gitkeep
 
       - name: Build spotter-client (linux/amd64) with Wails
         working-directory: ${{ github.workspace }}
