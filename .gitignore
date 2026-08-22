@@ -1,6 +1,9 @@
 # Build artifacts
 /bin/
 /dist/
+# 'go build .' without -o drops a binary in the repo root; the
+# canonical output target is /bin/ (Makefile) or /dist/ (release).
+/spotter
 # Ignore every build/ entry by default, but keep the macOS bundle
 # metadata + icon under source control (Info.plist is templated by
 # 'wails build'; iconfile.icns is generated from build/appicon.png and

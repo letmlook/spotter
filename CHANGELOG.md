@@ -8,7 +8,35 @@ Spotter 的所有值得注意的变更都在此记录。格式参考
 
 ## [Unreleased]
 
-暂无变更。
+### 新增
+
+#### Agent (`spotterd`)
+- **远程电源管理**：新增 `POST /api/v1/reboot` 与 `POST /api/v1/shutdown` 端点；由 `enable_power_actions` 配置开关控制（默认 `true`）。
+- **执行日志流式面板**：新增 `GET /api/v1/logs` 流式端点（基于 `journalctl -f`），由 `enable_log_stream` 开关与 `log_unit` 配置控制。
+- **systemd 单元加固**：加入 `NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp` 等基础 hardening。
+- **30 秒周期 heartbeat 日志**：便于长期运行时的可观测性。
+- **发现周期调整**：agent HELLO 周期保持 60s；client 注册表轮询从 30s 加快到 5s，缩短设备状态刷新延迟。
+
+#### Client (`spotter-client`)
+- 暴露 `RebootDevice` / `ShutdownDevice` / `StartLogStream` / `StopLogStream` Wails 绑定。
+- 新增 `LocalSubnets()` Wails 绑定（返回非 loopback IPv4，按 RFC1918 排序），`ScanSubnet("")` 自动选择第一个本地子网；设备列表新增「刷新所有设备状态」按钮。
+
+#### GUI
+- 详情标题头右侧新增「重启 / 关机」按钮（带确认弹窗）。
+- 详情面板底部新增可折叠的 `LogSection` 实时日志视图。
+- 主题模式新增「跟随系统」；主题/语言菜单当前项加 ✓ 标记。
+- `BasicCard` 改为双列布局 + Jetson 字段并排。
+- 设备列表「刷新所有设备状态」按钮移至标题行；移除底部 `DeviceActions`。
+
+#### 文档
+- 同步电源管理与执行日志流式面板的设计 spec、实施计划与中英双语文档。
+
+### 修复
+
+- `internal/collector`：`arch` 字段在精简内核 `/proc/sys/kernel/arch` 为空时回退到 `uname -m`，保证始终输出非空值。
+- GUI：移除强制 `NSAppearanceNameDarkAqua`，让 macOS 主题设置自然生效。
+- GUI：恢复 Task 6 替换 `DetailPanel` 时遗漏的电源按钮。
+- 电源管理 final review 反馈（i18n 文案、README 双语、文档同步）。
 
 ## [0.1.0] — 2026-08-22
 

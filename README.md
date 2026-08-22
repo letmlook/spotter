@@ -208,4 +208,4 @@ GUI 客户端通过 UDP 组播（或手动子网扫描 / 按 IP 添加）发现�
 - `.github/PULL_REQUEST_TEMPLATE.md`：提交 PR 时的自检清单。
 - `.github/workflows/`：`go.yml`（Go 测试 + lint）、`frontend.yml`（前端 build + typecheck）、`agent-build.yml`（设备端 arm64 / amd64 交叉编译）、`release.yml`（tag 触发的全量构建与 GitHub Release 发布）。
 - `.github/dependabot.yml`：Go / npm / GitHub Actions 依赖每周自动升级策略。
-- `.golangci.yml`：golangci-lint v1.59+ 的启用规则集合。
+- `.golangci.yml`：golangci-lint v2 的启用规则集合（0.x 阶段只启用 `gofmt` 与 `goimports` 两个 formatter；详细策略见文件内注释）。

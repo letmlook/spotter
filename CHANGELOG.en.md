@@ -6,7 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+#### Agent (`spotterd`)
+- **Remote power actions**: new `POST /api/v1/reboot` and `POST /api/v1/shutdown` endpoints, gated by the `enable_power_actions` config flag (defaults to `true`).
+- **Execution log streaming**: new `GET /api/v1/logs` streaming endpoint (backed by `journalctl -f`), gated by `enable_log_stream` and `log_unit` config keys.
+- **systemd unit hardening**: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`.
+- **30-second heartbeat log line** for long-running observability.
+- **Discovery cadence**: agent HELLO cadence stays at 60s; the client registry poll tightens from 30s to 5s for snappier state updates.
+
+#### Client (`spotter-client`)
+- Wails bindings exposed: `RebootDevice`, `ShutdownDevice`, `StartLogStream`, `StopLogStream`.
+- New `LocalSubnets()` binding (returns non-loopback IPv4 CIDRs sorted RFC1918-first); `ScanSubnet("")` now auto-detects. Device list gains a "refresh all devices" button.
+
+#### GUI
+- Reboot / shutdown buttons in the detail panel title bar (with confirmation dialog).
+- Collapsible `LogSection` real-time log view at the bottom of the detail panel.
+- Theme: add "follow system" option; check-mark the active item in the theme/language menu.
+- `BasicCard`: two-column layout with Jetson fields side-by-side.
+- Device list: "refresh all devices" button moved to the title row; bottom `DeviceActions` removed.
+
+#### Docs
+- Design specs, implementation plans, and bilingual documentation for both the power management and the execution log streaming features.
+
+### Fixed
+
+- `internal/collector`: the `arch` field falls back to `uname -m` when `/proc/sys/kernel/arch` is empty (slim / container kernels).
+- GUI: drop the forced `NSAppearanceNameDarkAqua` so macOS theme settings apply naturally.
+- GUI: restore the power buttons that were dropped during the Task 6 `DetailPanel` replacement.
+- Power management final review feedback (i18n, docs, English README).
 
 ## [0.1.0] — 2026-08-22
 
