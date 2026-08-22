@@ -32,6 +32,8 @@ type tomlConfig struct {
 	MulticastGroup     string `toml:"multicast_group"`
 	AgentVersion       string `toml:"agent_version"`
 	EnablePowerActions bool   `toml:"enable_power_actions"`
+	EnableLogStream    bool   `toml:"enable_log_stream"`
+	LogUnit            string `toml:"log_unit"`
 }
 
 func main() {
@@ -67,6 +69,8 @@ func main() {
 		MulticastGroup:     cfg.MulticastGroup,
 		AgentVersion:       cfg.AgentVersion,
 		EnablePowerActions: cfg.EnablePowerActions,
+		EnableLogStream:    cfg.EnableLogStream,
+		LogUnit:            cfg.LogUnit,
 	}, log)
 	if err != nil {
 		log.Error("create agent", slog.String("err", err.Error()))
