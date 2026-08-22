@@ -7,6 +7,7 @@ import StatusBar from './components/StatusBar';
 import DeviceSetupGuide from './components/DeviceSetupGuide';
 import AddDeviceByIPDialog from './components/AddDeviceByIPDialog';
 import AboutDialog from './components/AboutDialog';
+import SettingsDialog from './components/SettingsDialog';
 import { useWailsEvents } from './hooks/useWailsEvents';
 import { useMenu, MenuProvider } from './state/MenuContext';
 import { ScanSubnet } from '../wailsjs/go/main/App';
@@ -67,9 +68,15 @@ function AppInner() {
         <DeviceSetupGuideHost />
         <AddDeviceByIPDialog />
         <AboutDialog />
+        <SettingsDialogHost />
       </div>
     </ConfigProvider>
   );
+}
+
+function SettingsDialogHost() {
+  const { modal, closeModal } = useMenu();
+  return <SettingsDialog open={modal === 'settings'} onClose={closeModal} />;
 }
 
 function DeviceSetupGuideHost() {

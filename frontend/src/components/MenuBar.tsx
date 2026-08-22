@@ -84,6 +84,7 @@ export default function MenuBar() {
   const toolsMenu: MenuItemSpec[] = [
     { key: 'scan', label: t('menu.tools.scan'), shortcut: '⌘L', onClick: onScan },
     { key: 'add', label: t('menu.tools.add'), shortcut: '⌘I', onClick: () => openModal('add-device') },
+    { key: 'settings', label: t('menu.tools.settings'), shortcut: '⌘,', onClick: () => openModal('settings') },
     { key: 'clear', label: t('menu.tools.clear'), onClick: onClearRegistry, danger: true },
   ];
 

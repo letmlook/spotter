@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 
-export type ModalKind = null | 'setup-guide' | 'add-device' | 'about';
+export type ModalKind = null | 'setup-guide' | 'add-device' | 'about' | 'settings';
 
 interface MenuContextValue {
   modal: ModalKind;
