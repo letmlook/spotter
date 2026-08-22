@@ -46,8 +46,23 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      # Pin the Wails CLI to match the version in go.mod
+      # (`github.com/wailsapp/wails/v2 v2.14.0`). `go install @latest`
+      # from CI has been observed to hang on indirect deps
+      # (`pkg/errors v0.9.1`); pinning + retry makes the cost
+      # reproducible.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        env:
+          GOPROXY: https://goproxy.cn,https://proxy.golang.org,direct
+        run: |
+          for i in 1 2 3; do
+            if go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0; then
+              break
+            fi
+            echo "go install wails: retry $i/3"
+            sleep 15
+          done
+          wails version
 
       - name: Install Wails runtime deps (gtk3 + webkit2gtk)
         # Generate needs pkg-config + a few system headers to introspect
