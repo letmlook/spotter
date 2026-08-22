@@ -79,7 +79,10 @@ jobs:
         run: npm ci --no-audit --fund=false
 
       - name: Generate Wails frontend bindings
-        working-directory: frontend
+        # `wails generate module` looks for `wails.json` (and through
+        # it, the frontend folder) starting at cwd. `wails.json` lives
+        # at the repo root, NOT inside frontend/, so we must run with
+        # the repo as cwd.
         run: wails generate module
 
       - name: Production build (Vite)

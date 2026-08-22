@@ -141,7 +141,10 @@ jobs:
           npm run build
 
       - name: Generate Wails frontend bindings
-        # gitignored; regenerated on every CI run before `wails build`.
+        # `wails generate module` looks for `wails.json` (and through
+        # it, the frontend folder) starting at cwd. `wails.json` lives
+        # at the repo root, NOT inside frontend/, so we must run with
+        # the repo as cwd.
         run: wails generate module
 
       - name: Build spotter-client (linux/amd64) with Wails

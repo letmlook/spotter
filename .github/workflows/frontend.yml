@@ -81,10 +81,12 @@ jobs:
         run: npm ci --no-audit --fund=false
 
       - name: Generate Wails frontend bindings
-        # Wails reads the Go bound types and writes
-        # frontend/wailsjs/{go/main/App.js,App.d.ts} and
-        # frontend/wailsjs/runtime/runtime.{js,d.ts}. The .gitignore
-        # filters these out, so we must regenerate on every CI run.
+        # `wails generate module` looks for `wails.json` (and through
+        # it, the frontend folder) starting at cwd. `wails.json` lives
+        # at the repo root, NOT inside frontend/, so we must run with
+        # the repo as cwd. Earlier runs with `working-directory:
+        # frontend` failed with "open frontend/wails.json: no such
+        # file or directory".
         run: wails generate module
 
       - name: Type check
