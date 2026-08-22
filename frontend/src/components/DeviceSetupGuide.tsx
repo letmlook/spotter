@@ -23,8 +23,16 @@ function CodeBlock({ children }: { children: string }) {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: 12,
         color: 'var(--text-primary)',
-        whiteSpace: 'pre',
-        overflowX: 'auto',
+        // pre-wrap preserves newlines + indentation but allows long
+        // single lines (e.g. the deploy.ps1 with -Arch flag) to wrap
+        // instead of forcing the parent to grow. wordBreak/overflowWrap
+        // ensure even unbreakable runs (long paths, no spaces) still
+        // wrap inside the container.
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
       }}
     >
       <CopyOutlined
