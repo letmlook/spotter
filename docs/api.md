@@ -148,7 +148,7 @@ client 的手动子网扫描用它过滤候选，然后再请求 `/api/v1/info`�
 `/etc/spotterd/agent.toml`：
 
 ```toml
-enable_log_stream = true   # 默认 false
+enable_log_stream = true   # 默认 true
 log_unit = "spotterd.service"  # 默认
 ```
 
@@ -187,10 +187,10 @@ log_unit = "spotterd.service"  # 默认
 `/etc/spotterd/agent.toml`：
 
 ```toml
-enable_power_actions = true   # 默认 false
+enable_power_actions = true   # 默认 true
 ```
 
-开启后 agent 接受 `POST /api/v1/reboot` 与 `/api/v1/shutdown`。无身份认证，部署方负责网络隔离。
+开启后 agent 接受 `POST /api/v1/reboot` 与 `/api/v1/shutdown`。无身份认证，部署方负责网络隔离。如需关闭，显式设置 `enable_power_actions = false`。
 
 ## UDP 组播包（组地址 `239.255.42.42:9999`）
 

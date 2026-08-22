@@ -32,6 +32,9 @@ device_id = "$DEVICE_ID"
 listen_addr = "0.0.0.0:9999"
 multicast_group = "239.255.42.42:9999"
 agent_version = "${SPOTTER_AGENT_VERSION:-0.1.0}"
+enable_power_actions = true
+enable_log_stream = true
+log_unit = "spotterd.service"
 EOF
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"

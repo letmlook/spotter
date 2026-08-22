@@ -67,12 +67,10 @@ Spotter 为**可信 LAN** 设计。下列场景不在范围内，不视为安全
    知能邮件投递给到你。
 4. `scripts/deploy.sh` 只走公钥模式（密码模式会让密码残留在 shell 历
    史里）。
-5. 在启用 agent 的 `enable_power_actions = true` 前，确保设备在受控
-   VLAN / VPN 之后。
+5. `spotterd` 默认开启远程 reboot / shutdown（`enable_power_actions = true`），同网段任何客户端可触发 root 级别的 reboot / poweroff。生产环境务必把设备放在受控 VLAN / VPN 之后，或在 `agent.toml` 中显式设置 `enable_power_actions = false` 关闭。
 6. `enable_power_actions = true` 等于授权该子网任何客户端触发 root 级
    别的 reboot / poweroff。
-7. 在启用 agent 的 `enable_log_stream = true` 前，确保设备在受控
-   VLAN / VPN 之后。
+7. `spotterd` 默认开启日志流（`enable_log_stream = true`），等于授予同网段任何客户端读取 agent 的 systemd journal（仅限配置的 unit）。生产环境务必把设备放在受控 VLAN / VPN 之后，或在 `agent.toml` 中显式设置 `enable_log_stream = false` 关闭。
 8. `enable_log_stream = true` 等于授权该子网任何客户端读取 agent 的
    systemd journal（仅限配置的 unit）。
 9. 该端点返回的日志可能包含敏感信息（路径、凭据片段等），开启前评估

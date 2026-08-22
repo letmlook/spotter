@@ -150,7 +150,7 @@ Response (405, non-GET): plain text `method not allowed`.
 `/etc/spotterd/agent.toml`:
 
 ```toml
-enable_log_stream = true   # default false
+enable_log_stream = true   # default true
 log_unit = "spotterd.service"  # default
 ```
 
@@ -189,10 +189,10 @@ Same as reboot, but invokes `systemctl poweroff`. **Irreversible** — the devic
 `/etc/spotterd/agent.toml`:
 
 ```toml
-enable_power_actions = true   # default false
+enable_power_actions = true   # default true
 ```
 
-When enabled, the agent accepts `POST /api/v1/reboot` and `/api/v1/shutdown`. Unauthenticated; deployer is responsible for network isolation.
+When enabled, the agent accepts `POST /api/v1/reboot` and `/api/v1/shutdown`. Unauthenticated; deployer is responsible for network isolation. To turn it off, explicitly set `enable_power_actions = false`.
 
 ## UDP multicast packet (group `239.255.42.42:9999`)
 

@@ -52,9 +52,9 @@ multicast_group  = "239.255.42.42:9999"  # discovery group
 agent_version    = "0.1.0"          # stamped by install.sh
 ```
 
-Optional: set `enable_power_actions = true` in `agent.toml` to enable GUI-driven remote power actions (off by default).
+On by default: `enable_power_actions = true` enables GUI-driven remote power actions; to turn it off, explicitly set `enable_power_actions = false` in `agent.toml`.
 
-Optional: set `enable_log_stream = true` in `agent.toml` to enable GUI live-log streaming (off by default; combine with `log_unit` to point at a different systemd unit).
+On by default: `enable_log_stream = true` enables GUI live-log streaming (combine with `log_unit` to point at a different systemd unit); to turn it off, explicitly set `enable_log_stream = false` in `agent.toml`.
 
 To change the listen port after install:
 

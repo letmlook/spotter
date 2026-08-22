@@ -53,9 +53,9 @@ multicast_group  = "239.255.42.42:9999"  # 发现组
 agent_version    = "0.1.0"          # 由 install.sh 写入
 ```
 
-可选：在 `agent.toml` 中设置 `enable_power_actions = true` 以启用 GUI 远程电源管理（默认关闭）。
+默认开启：`enable_power_actions = true` 以启用 GUI 远程电源管理；如需关闭，在 `agent.toml` 中显式设置 `enable_power_actions = false`。
 
-可选：在 `agent.toml` 中设置 `enable_log_stream = true` 以启用 GUI 实时日志查看（默认关闭；可配合 `log_unit` 字段指定其他 systemd unit）。
+默认开启：`enable_log_stream = true` 以启用 GUI 实时日志查看（可配合 `log_unit` 字段指定其他 systemd unit）；如需关闭，在 `agent.toml` 中显式设置 `enable_log_stream = false`。
 
 修改监听端口：
 
