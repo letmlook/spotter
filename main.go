@@ -179,6 +179,36 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	opts := []func(*scanner.Options){
 		scanner.WithOnEvent(func(e scanner.Event) {
 			logger.Info("scanner event", slog.String("tag", e.Tag()))
+			// mDNS drift: re-anchor the device without user action so
+			// a migration from one subnet to another doesn't drop the
+			// row from the GUI.
+			if drift, ok := e.(scanner.EventDeviceIPDrifted); ok {
+				if drift.NewIP == "" {
+					return
+				}
+				err := app.reg.Update(drift.DeviceID, func(en *registry.Entry) {
+					if drift.NewIP != "" {
+						en.IP = drift.NewIP
+					}
+					if drift.NewPort > 0 {
+						en.Port = drift.NewPort
+					}
+					en.LastSource = "mdns"
+				})
+				if err != nil {
+					logger.Warn("mdns drift: registry update failed",
+						slog.String("device", drift.DeviceID),
+						slog.String("err", err.Error()))
+					return
+				}
+				fresh, _ := app.reg.Get(drift.DeviceID)
+				logger.Info("mdns drift re-anchored",
+					slog.String("device", drift.DeviceID),
+					slog.String("from", drift.OldIP),
+					slog.String("to", drift.NewIP))
+				app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
+				return
+			}
 			app.emitter.Emit(app.ctx, e.Tag(), e)
 		}),
 		scanner.WithMulticastGroup(s.MulticastGroup),
@@ -187,6 +217,10 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	if s.AuthToken != "" {
 		opts = append(opts, scanner.WithAuthToken(s.AuthToken))
 	}
+	// mDNS browse enables runtime IP-drift handling. Disable by
+	// setting [client] enable_mdns=false in a future settings field;
+	// for v0.4 the default is on.
+	opts = append(opts, scanner.WithEnableMDNS())
 	app.scanner = scanner.New(reg, opts...)
 	// streamFn 默认指向 scanner 实现；测试可覆盖。
 	app.streamFn = app.scanner.StreamDeviceLogs

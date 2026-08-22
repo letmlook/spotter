@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/spotter/spotter/internal/mdns"
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 )
@@ -46,6 +47,19 @@ type EventUnknownDeviceDiscovered struct {
 
 func (EventUnknownDeviceDiscovered) Tag() string { return "unknown-device" }
 
+// EventDeviceIPDrifted fires when mDNS reports a known device at a
+// new IP/Port (e.g. after it migrated to a different subnet). The
+// App layer catches this and updates the registry in place, then
+// emits EventInfoUpdated so the UI shows the new anchor.
+type EventDeviceIPDrifted struct {
+	DeviceID string
+	OldIP    string
+	NewIP    string
+	NewPort  int
+}
+
+func (EventDeviceIPDrifted) Tag() string { return "device-ip-drifted" }
+
 // Options for configuring a Scanner.
 type Options struct {
 	HTTPClient    *http.Client
@@ -62,6 +76,16 @@ type Options struct {
 	// on every HTTP request (poll, subnet probe, log stream, power actions).
 	// Empty by default; opt-in via WithAuthToken.
 	AuthToken string
+	// EnableMDNS, when true, starts an mDNS browse loop inside Start().
+	// Discovered devices whose IP/Port differ from the registry are
+	// reported via EventDeviceIPDrifted so the App layer can re-anchor.
+	EnableMDNS bool
+}
+
+// WithEnableMDNS opts the scanner into browsing mDNS / DNS-SD
+// announcements alongside its poll/mcast loops.
+func WithEnableMDNS() func(*Options) {
+	return func(o *Options) { o.EnableMDNS = true }
 }
 
 // WithAuthToken sets the bearer token used for Authorization headers.
@@ -197,6 +221,47 @@ func timeNowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 func (s *Scanner) Start(ctx context.Context) {
 	go s.pollLoop(ctx)
 	go s.mcastLoop(ctx)
+	if s.opts.EnableMDNS {
+		go s.watchMdns(ctx)
+	}
+}
+
+// watchMdns subscribes to mDNS browse results and emits
+// EventDeviceIPDrifted for any device in the registry whose IP/Port
+// has changed since the last announcement. Unknown devices (those
+// not yet in the registry) are silently dropped — the standard
+// UnknownDevice flow handles introduction.
+func (s *Scanner) watchMdns(ctx context.Context) {
+	b, err := mdns.NewBrowser()
+	if err != nil {
+		s.opts.Logger.Debug("mdns: browser init failed", "err", err.Error())
+		return
+	}
+	type lastSeen struct{ addr string; port int }
+	seen := make(map[string]lastSeen)
+	if err := b.Start(ctx, func(e mdns.ServiceEntry) {
+		cur, ok := s.reg.Get(e.DeviceID)
+		if !ok {
+			return // unknown device; ignore
+		}
+		// Coalesce repeated announcements of the same IP/Port.
+		prev, dup := seen[e.DeviceID]
+		if dup && prev.addr == e.Addr && prev.port == e.Port {
+			return
+		}
+		seen[e.DeviceID] = lastSeen{addr: e.Addr, port: e.Port}
+		if cur.IP == e.Addr && cur.Port == e.Port {
+			return
+		}
+		s.emit(EventDeviceIPDrifted{
+			DeviceID: e.DeviceID,
+			OldIP:    cur.IP,
+			NewIP:    e.Addr,
+			NewPort:  e.Port,
+		})
+	}); err != nil {
+		s.opts.Logger.Debug("mdns: browse start failed", "err", err.Error())
+	}
 }
 
 // MergeForTest exposes the merge pipeline for tests.

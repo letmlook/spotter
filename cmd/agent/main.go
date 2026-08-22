@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/spotter/spotter/internal/agentd"
 	"github.com/spotter/spotter/internal/collector"
+	"github.com/spotter/spotter/internal/mdns"
 )
 
 const defaultAgentVersion = "0.1.0"
@@ -107,7 +109,49 @@ func main() {
 		log.Error("start", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
+
+	// Register the agent under _spotter._tcp via mDNS so clients can
+	// re-anchor when the device migrates to a different subnet. The
+	// announce lives until ctx is cancelled (zeroconf owns the
+	// goroutine and Shutdown cleanly tears it down).
+	port := listenPortFromAddr(cfg.ListenAddr)
+	if port > 0 {
+		announceAndShutdown(ctx, log, cfg.DeviceID, port)
+	} else {
+		log.Warn("skip mDNS announce: invalid listen_addr", slog.String("addr", cfg.ListenAddr))
+	}
+
 	log.Info("agent stopped")
+}
+
+// listenPortFromAddr extracts the port from "host:port". Defaults to
+// 0 on parse error so the caller can skip mDNS cleanly.
+func listenPortFromAddr(addr string) int {
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	var p int
+	if _, err := fmt.Sscanf(portStr, "%d", &p); err != nil {
+		return 0
+	}
+	return p
+}
+
+// announceAndShutdown is fire-and-forget; failures are logged at Warn
+// rather than fatal so a misconfigured network doesn't prevent the
+// agent from running (multicast / poll paths still work).
+func announceAndShutdown(ctx context.Context, log *slog.Logger, deviceID string, port int) {
+	ann, err := mdns.NewAnnouncer(deviceID, port)
+	if err != nil {
+		log.Warn("mDNS announce failed", slog.String("err", err.Error()))
+		return
+	}
+	log.Info("mDNS announcing", slog.String("device_id", deviceID), slog.Int("port", port))
+	go func() {
+		<-ctx.Done()
+		ann.Shutdown()
+	}()
 }
 
 // loadConfig reads the TOML config from path. A missing file is not an
