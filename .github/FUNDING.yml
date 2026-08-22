@@ -1,7 +1,2 @@
-# Funding
-# Replace the placeholders below before going public, or remove this file if
-# the project does not accept funding. See
-# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
-github: [spotter-dev]
-custom:
-  - "https://example.com/spotter/sponsor"
+# Funding — see https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+github: [letmlook]

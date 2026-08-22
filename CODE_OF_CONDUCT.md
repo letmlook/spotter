@@ -47,9 +47,10 @@ request 以及任何由项目赞助的频道，同时也适用于个人代表本
 
 ## 执行
 
-辱骂、骚扰或任何其它不可接受行为可通过
-**spotter-conduct@example.com**（上线前请替换为真实地址）报告给项目
-维护者。所有投诉都会被及时且公平地审阅与调查。
+辱骂、骚扰或任何其它不可接受行为可通过向仓库维护者
+[@letmlook](https://github.com/letmlook) 发送 GitHub 私信，或提交
+[GitHub Issue](https://github.com/letmlook/spotter/issues/new)（标题请
+注明「行为准则」）报告。所有投诉都会被及时且公平地审阅与调查。
 
 所有社区维护者都有义务对举报人的隐私与安全负责。
 

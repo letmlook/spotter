@@ -8,20 +8,7 @@ Spotter 的所有值得注意的变更都在此记录。格式参考
 
 ## [Unreleased]
 
-### 新增
-- _待补充_
-
-### 改动
-- _待补充_
-
-### 移除
-- _待补充_
-
-### 修复
-- _待补充_
-
-### 安全
-- _待补充_
+暂无变更。
 
 ## [0.1.0] — 2026-08-22
 
@@ -70,5 +57,5 @@ Linux `arm64` 与 `amd64`；client 支持 Windows、macOS 与 Linux。
 - 已知限制列在 README「Known limitations (MVP)」：不提供远端命令执
   行、UDP 组播只在 L2、无认证。
 
-[Unreleased]: https://github.com/spotter/spotter/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/spotter/spotter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/letmlook/spotter/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/letmlook/spotter/releases/tag/v0.1.0

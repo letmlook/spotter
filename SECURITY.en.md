@@ -18,16 +18,10 @@ protocol-bump boundary.
 
 ## Reporting a vulnerability
 
-**Please do not open a public GitHub issue for security bugs.** Use one of
-these private channels instead:
-
-- **Email**: spotter-security@example.com (replace with the real maintainer
-  address before publishing) — GPG key to be added here once a key is
-  chosen.
-- **GitHub Security Advisories**: **Repository → Security → Advisories →
-  "New draft security advisory"**. This is the preferred channel for code
-  paths and reproduction steps because it keeps the report private until a
-  fix is published.
+**Please do not open a public GitHub issue for security bugs.** Use **GitHub
+Security Advisories** ([create a private security advisory](https://github.com/letmlook/spotter/security/advisories/new)).
+This is the preferred channel for code paths and reproduction steps because
+it keeps the report private until a fix is published.
 
 We aim to acknowledge new reports within **3 business days** and to publish a
 fix or mitigation within **30 days** for issues with a clear path to

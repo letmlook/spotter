@@ -59,10 +59,11 @@ representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers at
-**spotter-conduct@example.com** (replace with the maintainer address before
-publishing). All complaints will be reviewed and investigated promptly and
-fairly.
+reported to the project maintainers by sending a GitHub private message to
+[@letmlook](https://github.com/letmlook) or by opening a
+[GitHub Issue](https://github.com/letmlook/spotter/issues/new) (please
+prefix the title with "Code of Conduct"). All complaints will be reviewed
+and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of
 the reporter of any incident.

@@ -20,12 +20,12 @@ React）。它们通过 protocol 包共享，但各自有略微不同的迭代�
 | Go           | 1.25     | `go.mod` 声明 `go 1.25.0`。                   |
 | Node.js      | 20 LTS   | Wails / Vite 需要。                           |
 | npm          | 10+      | 前端依赖管理。                                |
-| Wails CLI    | v2.15+   | `go install github.com/wailsapp/wails/v2/cmd/wails@latest` |
+| Wails CLI    | v2.14+   | `go install github.com/wailsapp/wails/v2/cmd/wails@latest` |
 
 构建入口只有 Makefile 这一份。
 
 ```bash
-git clone https://github.com/spotter/spotter.git
+git clone https://github.com/letmlook/spotter.git
 cd spotter
 
 # 跑带 race detector 的完整 Go 测试。

@@ -83,11 +83,11 @@ export default function MenuBar() {
   const toolsMenu: MenuItemSpec[] = [
     { key: 'scan', label: t('menu.tools.scan'), shortcut: '⌘L', onClick: onScan },
     { key: 'add', label: t('menu.tools.add'), shortcut: '⌘I', onClick: () => openModal('add-device') },
-    { key: 'guide', label: t('menu.tools.guide'), shortcut: 'F1', onClick: () => openModal('setup-guide') },
     { key: 'clear', label: t('menu.tools.clear'), onClick: onClearRegistry, danger: true },
   ];
 
   const helpMenu: MenuItemSpec[] = [
+    { key: 'guide', label: t('menu.help.guide'), shortcut: 'F1', onClick: () => openModal('setup-guide') },
     { key: 'about', label: t('menu.help.about'), onClick: () => openModal('about') },
   ];
 

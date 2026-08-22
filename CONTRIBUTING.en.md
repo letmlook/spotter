@@ -20,12 +20,12 @@ but otherwise evolve on slightly different cadences.
 | Go           | 1.25        | `go.mod` declares `go 1.25.0`.               |
 | Node.js      | 20 LTS      | Required by Wails / Vite.                    |
 | npm          | 10+         | Frontend dependency management.              |
-| Wails CLI    | v2.15+      | `go install github.com/wailsapp/wails/v2/cmd/wails@latest` |
+| Wails CLI    | v2.14+      | `go install github.com/wailsapp/wails/v2/cmd/wails@latest` |
 
 The Makefile is the only sanctioned build entry point.
 
 ```bash
-git clone https://github.com/spotter/spotter.git
+git clone https://github.com/letmlook/spotter.git
 cd spotter
 
 # Run the full Go test suite with race detection.

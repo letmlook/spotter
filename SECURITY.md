@@ -18,13 +18,9 @@ minor 时，应该预期跨协议版本边界的 client 升级会需要重部署
 
 ## 报告漏洞
 
-**请不要在公开 issue 跟踪器里提安全类 bug。** 改用以下私密渠道之一：
-
-- **邮件**：spotter-security@example.com（上线前请替换为真实维护者邮
-  箱）。GPG 公钥等选定后会在此处补登。
-- **GitHub Security Advisories**：**仓库 → Security → Advisories →
-  「New draft security advisory」**。这是推荐渠道，因为它能把报告与
-  修复过程都私有保留到发布之日。
+**请不要在公开 issue 跟踪器里提安全类 bug。** 请使用 **GitHub Security
+Advisories**（[新建私密安全公告](https://github.com/letmlook/spotter/security/advisories/new)）。
+这是推荐渠道，因为它能把报告与修复过程都私有保留到发布之日。
 
 我们承诺在工作日 **3 天内**确认新报告；在有清晰修复路径的前提下，
 **30 天内**发布修复或缓解方案。我们遵循 [coordinated disclosure][cd]：

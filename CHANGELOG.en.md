@@ -6,20 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-- _nothing yet_
-
-### Changed
-- _nothing yet_
-
-### Removed
-- _nothing yet_
-
-### Fixed
-- _nothing yet_
-
-### Security
-- _nothing yet_
+No changes yet.
 
 ## [0.1.0] — 2026-08-22
 
@@ -72,5 +59,5 @@ Windows, macOS, and Linux.
   (MVP)"): no remote command execution, UDP multicast stays on L2, no
   authentication.
 
-[Unreleased]: https://github.com/spotter/spotter/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/spotter/spotter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/letmlook/spotter/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/letmlook/spotter/releases/tag/v0.1.0

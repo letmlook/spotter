@@ -25,8 +25,8 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'menu.tools': 'Tools',
     'menu.tools.scan': 'Scan local subnet',
     'menu.tools.add': 'Add device by IP…',
-    'menu.tools.guide': 'Device setup guide…',
     'menu.help': 'Help',
+    'menu.help.guide': 'Device setup guide…',
     'menu.help.about': 'About Spotter…',
 
     // Sidebar
@@ -165,8 +165,8 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     'menu.tools': '工具',
     'menu.tools.scan': '扫描本机子网',
     'menu.tools.add': '按 IP 添加设备…',
-    'menu.tools.guide': '设备部署教程…',
     'menu.help': '帮助',
+    'menu.help.guide': '设备部署教程…',
     'menu.help.about': '关于 Spotter…',
 
     'sidebar.devices': '设备',

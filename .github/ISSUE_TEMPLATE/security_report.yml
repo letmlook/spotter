@@ -8,18 +8,18 @@ body:
     attributes:
       content: |
         > **Please stop.** Security issues must NOT be filed as a public issue.
-        > Use **GitHub Security Advisories** (Repository → Security →
-        > Advisories → "New draft security advisory") or email
-        > `spotter-security@example.com` instead. This template exists only so
-        > an accidental public report is captured and can be moved to a
-        > private channel. A maintainer will convert this issue into a
-        > private advisory or close it as `security/not-a-bug`.
+        > Use **GitHub Security Advisories**
+        > ([create a private advisory](https://github.com/letmlook/spotter/security/advisories/new))
+        > instead. This template exists only so an accidental public report is
+        > captured and can be moved to a private channel. A maintainer will
+        > convert this issue into a private advisory or close it as
+        > `security/not-a-bug`.
   - type: input
     id: channel
     attributes:
       label: Preferred private channel
       description: How can a maintainer reach you securely?
-      placeholder: "GitHub Security Advisory, or email spotter-security@example.com"
+      placeholder: "GitHub Security Advisory (link to your draft advisory if you created one)"
     validations:
       required: true
   - type: textarea
