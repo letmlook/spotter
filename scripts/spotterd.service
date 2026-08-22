@@ -10,8 +10,14 @@ Restart=on-failure
 RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=60
-NoNewPrivileges=true
-ProtectSystem=strict
+# Hardening: spotterd is a privileged control plane (it must call
+# `systemctl reboot/poweroff` on its own machine), so the two flags
+# that block suid/syscalls must be DISABLED — otherwise the child
+# systemctl process inherits the ProtectedSystem namespace and
+# silently fails to reach PID 1. We keep ProtectHome + PrivateTmp
+# which don't interfere with power actions.
+NoNewPrivileges=false
+ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
 
