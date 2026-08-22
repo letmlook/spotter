@@ -33,6 +33,7 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     // Sidebar
     'sidebar.devices': 'Devices',
     'sidebar.scan': 'Scan local subnet',
+    'sidebar.refresh': 'Refresh device statuses',
     'sidebar.clear': 'Clear registry',
 
     // Empty state
@@ -153,6 +154,8 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     // Notifications
     'notif.scan.done': 'Scan complete',
     'notif.scan.fail': 'Scan failed',
+    'notif.refresh.done': 'Refreshed',
+    'notif.refresh.fail': 'Refresh failed',
     'notif.newdev.title': 'New device discovered',
     'notif.newdev.hostname': 'hostname',
     'notif.newdev.model': 'model',
@@ -299,6 +302,8 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
 
     'notif.scan.done': '扫描完成',
     'notif.scan.fail': '扫描失败',
+    'notif.refresh.done': '已刷新',
+    'notif.refresh.fail': '刷新失败',
     'notif.newdev.title': '发现新设备',
     'notif.newdev.hostname': '主机名',
     'notif.newdev.model': '型号',
