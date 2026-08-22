@@ -1,8 +1,11 @@
 package agentd
 
 import (
+	"context"
 	"log/slog"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
 )
@@ -72,3 +75,34 @@ type missingFieldError struct{ field string }
 
 func (e *missingFieldError) Error() string { return "agentd: missing field: " + e.field }
 func errMissing(f string) error            { return &missingFieldError{f} }
+
+// heartbeatInterval is how often the agent emits a "heartbeat" log line.
+// Short enough that operators see the stream is alive without flooding
+// the journal; long enough that the journal is not dominated by heartbeats.
+const heartbeatInterval = 30 * time.Second
+
+// runHeartbeat logs a startup heartbeat followed by a periodic one. The
+// goal is to give GUI clients something to follow in an otherwise silent
+// service so they can confirm the log stream is live. Exits when ctx is
+// cancelled.
+func (a *Agent) runHeartbeat(ctx context.Context) {
+	start := time.Now()
+	a.logger.Info("heartbeat",
+		slog.String("phase", "start"),
+		slog.String("device_id", a.cfg.DeviceID),
+		slog.String("agent_version", a.cfg.AgentVersion),
+	)
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.logger.Info("heartbeat",
+				slog.Duration("uptime", time.Since(start)),
+				slog.Int("goroutines", runtime.NumGoroutine()),
+			)
+		}
+	}
+}

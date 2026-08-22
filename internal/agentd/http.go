@@ -131,12 +131,13 @@ func (a *Agent) StartHTTP(ctx context.Context) error {
 	}
 }
 
-// Start launches the UDP listener (non-blocking) then blocks running the
-// HTTP server until ctx is cancelled.
+// Start launches the UDP listener (non-blocking), the heartbeat goroutine,
+// then blocks running the HTTP server until ctx is cancelled.
 func (a *Agent) Start(ctx context.Context) error {
 	if err := a.StartUDP(ctx); err != nil {
 		return err
 	}
+	go a.runHeartbeat(ctx)
 	return a.StartHTTP(ctx)
 }
 
