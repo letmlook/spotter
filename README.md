@@ -37,6 +37,19 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 wails build
 ```
 
+### Build on macOS
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+cd frontend && npm install && cd ..
+make client          # produces build/bin/Spotter.app
+open build/bin/Spotter.app
+```
+
+If `wails` is not on PATH, `make client` falls back to `go build` and
+produces a bare `bin/spotter-client` Mach-O binary (no .app bundle).
+The `.app` bundle is the recommended way to launch on macOS.
+
 Artifacts are written to `bin/`:
 
 | Artifact                       | Source            |
