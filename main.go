@@ -109,7 +109,10 @@ func main() {
 				HideTitleBar:               false,
 				FullSizeContent:            false,
 			},
-			Appearance:           mac.NSAppearanceNameDarkAqua,
+			// No explicit Appearance: lets the window follow the macOS
+			// system appearance, which also makes the webview's
+			// prefers-color-scheme media query reflect the system so
+			// the React layer can react to live theme switches.
 			WebviewIsTransparent: false,
 			About: &mac.AboutInfo{
 				Title:   "Spotter",
