@@ -12,7 +12,6 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
     // Menu bar
     'menu.file': 'File',
     'menu.file.quit': 'Quit',
-    'menu.file.close': 'Close window',
     'menu.view': 'View',
     'menu.view.refresh': 'Refresh',
     'menu.view.clear': 'Clear registry…',
@@ -201,7 +200,6 @@ export const dictionaries: Record<Locale, Record<string, string>> = {
 
     'menu.file': '文件',
     'menu.file.quit': '退出',
-    'menu.file.close': '关闭窗口',
     'menu.view': '视图',
     'menu.view.refresh': '刷新',
     'menu.view.clear': '清空注册表…',
