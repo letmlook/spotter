@@ -1,116 +1,226 @@
-// End-to-end CLI tests: each test re-execs the compiled `spotter-cli`
-// binary via `go test -c` artefact, captures stdout/stderr, and
-// asserts on the bytes. This avoids the os.Exit trap that unit
-// tests can't safely observe.
 package main
 
 import (
 	"bytes"
-	"os"
-	"os/exec"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/spotter/spotter/internal/protocol"
+	"github.com/spotter/spotter/internal/registry"
 )
 
-var (
-	cliOnce    sync.Once
-	cliBinPath string
-	cliBinErr  error
-)
-
-func cliBin(t *testing.T) string {
+// withIsolatedHome configures HOME / XDG_CONFIG_HOME to point at a
+// dedicated TempDir so cmdList / cmdInfo / cmdScan can open the
+// right devices.json and settings.json paths.
+func withIsolatedHome(t *testing.T) string {
 	t.Helper()
-	cliOnce.Do(func() {
-		exe, err := exec.LookPath("go")
-		if err != nil {
-			cliBinErr = err
-			return
-		}
-		// Use a stable TempDir shared across tests (NOT t.TempDir,
-		// which is auto-cleaned when the first caller finishes).
-		dir, err := os.MkdirTemp("", "spotter-cli-test-*")
-		if err != nil {
-			cliBinErr = err
-			return
-		}
-		out := filepath.Join(dir, "spotter-cli")
-		build, err := exec.Command(exe, "build", "-o", out, ".").CombinedOutput()
-		if err != nil {
-			cliBinErr = &execError{err: err, out: string(build)}
-			return
-		}
-		cliBinPath = out
-	})
-	if cliBinErr != nil {
-		t.Skipf("cannot build spotter-cli: %v", cliBinErr)
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	return dir
+}
+
+// seededEntry writes an entry into <dir>/Spotter/devices.json with
+// a populated LastInfo so cmdInfo can render JSON without a live
+// poll.
+func seededEntry(t *testing.T, dir, id, ip string, online bool) {
+	t.Helper()
+	reg, err := registry.Open(filepath.Join(dir, "Spotter", "devices.json"))
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
 	}
-	return cliBinPath
+	defer reg.Close()
+	if err := reg.Add(registry.Entry{
+		DeviceID:   id,
+		IP:         ip,
+		Port:       9999,
+		Username:   "nvidia",
+		Online:     online,
+		LastSource: "test",
+		LastInfo: &protocol.DeviceInfo{
+			SchemaVersion: protocol.SchemaVersion,
+			DeviceID:      id,
+			Basic:         protocol.BasicInfo{Hostname: id},
+			Network:       protocol.NetworkInfo{PrimaryIP: ip},
+		},
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
 }
 
-type execError struct {
-	err error
-	out string
-}
-
-func (e *execError) Error() string { return e.err.Error() + "\n" + e.out }
-
-type cliRun struct {
-	Stdout, Stderr string
-	Code           int
-}
-
-func runCLI(t *testing.T, bin string, args ...string) cliRun {
-	t.Helper()
-	cmd := exec.Command(bin, args...)
-	cmd.Env = append(cmd.Environ(),
-		"HOME="+t.TempDir(),
-		"XDG_CONFIG_HOME="+t.TempDir(),
-	)
+// runInProcess invokes run() with the given args and returns the
+// merged output buffer and exit code.
+func runInProcess(args []string) (string, string, int) {
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
-		code = ee.ExitCode()
-	} else if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	return cliRun{Stdout: stdout.String(), Stderr: stderr.String(), Code: code}
+	code := run(args, &stdout, &stderr)
+	return stdout.String(), stderr.String(), code
 }
 
-func TestCLI_Version(t *testing.T) {
-	out := runCLI(t, cliBin(t), "version")
-	if !strings.Contains(out.Stdout, "spotter-cli") {
-		t.Errorf("stdout missing version marker: %q", out.Stdout)
+func TestRun_NoArgs_PrintsUsage(t *testing.T) {
+	out, err, code := runInProcess(nil)
+	if code != 2 {
+		t.Errorf("want exit 2, got %d", code)
 	}
+	if !strings.Contains(err, "usage:") {
+		t.Errorf("want usage banner on stderr: %q", err)
+	}
+	_ = out
 }
 
-func TestCLI_UnknownCommand(t *testing.T) {
-	out := runCLI(t, cliBin(t), "nope")
-	if out.Code != 2 {
-		t.Errorf("want exit 2, got %d (stderr=%q)", out.Code, out.Stderr)
+func TestRun_Version(t *testing.T) {
+	out, _, code := runInProcess([]string{"version"})
+	if code != 0 {
+		t.Errorf("want 0, got %d", code)
 	}
-	if !strings.Contains(out.Stderr, "usage:") {
-		t.Errorf("want usage banner on stderr: %q", out.Stderr)
+	if !strings.Contains(out, "spotter-cli") {
+		t.Errorf("want version string: %q", out)
 	}
 }
 
-func TestCLI_ListEmpty(t *testing.T) {
-	out := runCLI(t, cliBin(t), "list")
-	if !strings.Contains(out.Stdout, "(no devices)") {
-		t.Errorf("expected 'no devices' marker in stdout: %q", out.Stdout)
+func TestRun_UnknownCommand_UsageAndExitTwo(t *testing.T) {
+	out, err, code := runInProcess([]string{"nope"})
+	if code != 2 {
+		t.Errorf("want 2, got %d", code)
+	}
+	if !strings.Contains(err, "usage:") {
+		t.Errorf("want usage banner: %q", err)
+	}
+	if !strings.Contains(err, "unknown command") {
+		t.Errorf("want unknown-command marker: %q", err)
+	}
+	_ = out
+}
+
+func TestRun_ListEmpty(t *testing.T) {
+	withIsolatedHome(t)
+	out, _, code := runInProcess([]string{"list"})
+	if code != 0 {
+		t.Fatalf("want 0, got %d", code)
+	}
+	if !strings.Contains(out, "(no devices)") {
+		t.Errorf("want 'no devices' marker in stdout: %q", out)
 	}
 }
 
-func TestCLI_InfoMissingDeviceExitsOne(t *testing.T) {
-	out := runCLI(t, cliBin(t), "info", "ghost")
-	if out.Code != 1 {
-		t.Errorf("want exit 1, got %d (stderr=%q)", out.Code, out.Stderr)
+func TestRun_ListWithMultipleEntries(t *testing.T) {
+	dir := withIsolatedHome(t)
+	seededEntry(t, dir, "alpha", "10.0.0.1", true)
+	seededEntry(t, dir, "bravo", "10.0.0.2", false)
+	seededEntry(t, dir, "charlie", "10.0.0.3", true)
+	out, _, code := runInProcess([]string{"list"})
+	if code != 0 {
+		t.Fatalf("want 0, got %d", code)
 	}
-	if !strings.Contains(out.Stderr, "device not in registry") {
-		t.Errorf("want 'device not in registry' message: %q", out.Stderr)
+	for _, want := range []string{"alpha", "bravo", "charlie", "online", "offline", "9999"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestRun_InfoMissingDevice(t *testing.T) {
+	withIsolatedHome(t)
+	_, err, code := runInProcess([]string{"info", "ghost"})
+	if code != 1 {
+		t.Errorf("want 1, got %d", code)
+	}
+	if !strings.Contains(err, "device not in registry") {
+		t.Errorf("want 'device not in registry': %q", err)
+	}
+}
+
+func TestRun_InfoNoArgs(t *testing.T) {
+	withIsolatedHome(t)
+	_, err, code := runInProcess([]string{"info"})
+	if code != 2 {
+		t.Errorf("want 2 (usage), got %d", code)
+	}
+	if !strings.Contains(err, "usage:") {
+		t.Errorf("want usage banner: %q", err)
+	}
+}
+
+func TestRun_InfoCachedDevice_EmitsJSON(t *testing.T) {
+	dir := withIsolatedHome(t)
+	seededEntry(t, dir, "schema-dev", "10.0.0.42", true)
+	out, _, code := runInProcess([]string{"info", "schema-dev"})
+	if code != 0 {
+		t.Fatalf("want 0, got %d", code)
+	}
+	// 1. JSON schema: must decode into protocol.DeviceInfo.
+	var got protocol.DeviceInfo
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("info output not JSON: %v\n%s", err, out)
+	}
+	if got.DeviceID != "schema-dev" {
+		t.Errorf("DeviceID: %q", got.DeviceID)
+	}
+	if got.Basic.Hostname != "schema-dev" {
+		t.Errorf("Basic.Hostname: %q", got.Basic.Hostname)
+	}
+	// 2. Pretty-printed: SetIndent("","  ") → at least one indented
+	//    line beginning with two spaces and "device_id".
+	if !strings.Contains(out, "  \"device_id\"") {
+		t.Errorf("expected pretty-printed JSON: %q", out)
+	}
+}
+
+func TestRun_InfoDeviceWithoutCachedInfo(t *testing.T) {
+	dir := withIsolatedHome(t)
+	// Insert entry with no LastInfo by registry.Add and then mutate
+	// the LastInfo to nil via Update — simpler: Add then directly.
+	reg, err := registry.Open(filepath.Join(dir, "Spotter", "devices.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Add(registry.Entry{DeviceID: "noinfo", IP: "10.0.0.4", Port: 9999}); err != nil {
+		t.Fatal(err)
+	}
+	reg.Close()
+	_, errOut, code := runInProcess([]string{"info", "noinfo"})
+	if code != 1 {
+		t.Errorf("want 1 (no cached info), got %d", code)
+	}
+	if !strings.Contains(errOut, "no cached info") {
+		t.Errorf("want 'no cached info' message: %q", errOut)
+	}
+}
+
+func TestRun_ScanInvalidCIDR_ExitOne(t *testing.T) {
+	dir := withIsolatedHome(t)
+	_, errOut, code := runInProcess([]string{"scan", "--cidr=not-a-cidr"})
+	if code != 1 {
+		t.Errorf("want 1, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "CIDR") && !strings.Contains(errOut, "parse") {
+		t.Errorf("want CIDR/parse error: %q", errOut)
+	}
+	_ = dir
+}
+
+func TestRun_ScanExplicitCIDR_KnownLAN(t *testing.T) {
+	// Pure-network test: start a fake spotterd on 127.0.0.1, run
+	// scan against that /30, expect "scanning 127.0.0.0/30"
+	// progress on stderr. We can't assert discovery (loopback
+	// behaves differently), only that the command reached the
+	// ScanSubnet call without panicking.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schema_version":2,"device_id":"probe","basic":{"hostname":"h"}}`))
+	}))
+	defer srv.Close()
+	withIsolatedHome(t)
+	_ = srv
+	_, errOut, code := runInProcess([]string{"scan", "--cidr=127.0.0.0/30", "--timeout=2s"})
+	if code != 0 && code != 1 {
+		t.Errorf("want 0 or 1, got %d", code)
+	}
+	if !strings.Contains(errOut, "scanning 127.0.0.0/30") {
+		t.Errorf("want 'scanning ...' progress: %q", errOut)
 	}
 }
 

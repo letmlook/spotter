@@ -12,9 +12,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -27,75 +29,112 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	os.Exit(code)
+}
+
+// run is the testable entry point. It dispatches to the right
+// sub-command against the provided stdout/stderr and returns the
+// intended exit code without calling os.Exit. Tests drive this
+// directly so they can observe side effects on captured streams.
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "usage: spotter-cli <list|scan|info|version> [...]")
+		fmt.Fprintln(stderr, "  list                 List devices from the local registry.")
+		fmt.Fprintln(stderr, "  scan [cidr]          Scan a subnet (or auto-pick the first RFC1918).")
+		fmt.Fprintln(stderr, "  info <device_id>     Fetch /api/v1/info from the device.")
+		fmt.Fprintln(stderr, "  version              Print version.")
+		return 2
 	}
-	cmd, args := os.Args[1], os.Args[2:]
+	cmd, args := args[0], args[1:]
 	switch cmd {
 	case "list", "ls":
-		cmdList()
+		return cmdList(stdout, stderr)
 	case "scan":
-		cmdScan(args)
+		return cmdScan(args, stdout, stderr)
 	case "info":
-		cmdInfo(args)
+		return cmdInfo(args, stdout, stderr)
 	case "version":
-		fmt.Println("spotter-cli dev")
+		fmt.Fprintln(stdout, "spotter-cli dev")
+		return 0
 	default:
-		usage()
-		os.Exit(2)
+		fmt.Fprintf(stderr, "unknown command %q\n", cmd)
+		fmt.Fprintln(stderr, "usage: spotter-cli <list|scan|info|version> [...]")
+		return 2
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: spotter-cli <list|scan|info|version> [...]")
-	fmt.Fprintln(os.Stderr, "  list                 List devices from the local registry.")
-	fmt.Fprintln(os.Stderr, "  scan [cidr]          Scan a subnet (or auto-pick the first RFC1918).")
-	fmt.Fprintln(os.Stderr, "  info <device_id>     Fetch /api/v1/info from the device.")
-	fmt.Fprintln(os.Stderr, "  version              Print version.")
+// userDataDir returns the directory under which the CLI keeps its
+// settings.json and devices.json. We honour $XDG_CONFIG_HOME
+// (Linux), $HOME + Library/Application Support (macOS), and
+// %AppData% (Windows). Test harness relies on $XDG_CONFIG_HOME /
+// $HOME being set, so we resolve both branches.
+func userDataDir() (string, error) {
+	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
+		return filepath.Join(d, "Spotter"), nil
+	}
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cfgDir, "Spotter"), nil
 }
 
 // settingsPath returns the conventional location for settings.json.
 func settingsPath() string {
-	cfgDir, err := os.UserConfigDir()
+	dir, err := userDataDir()
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%s/Spotter/settings.json", cfgDir)
+	return filepath.Join(dir, "settings.json")
 }
 
 // registryPath returns the conventional location for devices.json.
 func registryPath() string {
-	cfgDir, err := os.UserConfigDir()
+	dir, err := userDataDir()
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%s/Spotter/devices.json", cfgDir)
+	return filepath.Join(dir, "devices.json")
 }
 
-func openStore() (*registry.Registry, *clientconfig.Store) {
-	reg, err := registry.Open(registryPath())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "open registry:", err)
-		os.Exit(1)
+// openStoreSilent is the test-friendly variant: it does NOT exit on
+// error; the caller inspects the returned error. Production code
+// uses openStore which does os.Exit.
+func openStoreSilent() (reg *registry.Registry, cfg *clientconfig.Store, err error) {
+	reg, rerr := registry.Open(registryPath())
+	if rerr != nil {
+		return nil, nil, rerr
 	}
-	cfg, err := clientconfig.Open(settingsPath())
+	cfg, serr := clientconfig.Open(settingsPath())
+	if serr != nil {
+		reg.Close()
+		return nil, nil, serr
+	}
+	return reg, cfg, nil
+}
+
+// openStore is the production path used by cmdList / cmdScan /
+// cmdInfo. It logs to stderr and exits non-zero on failure so
+// the binary's UX matches traditional CLI expectations.
+func openStore() (*registry.Registry, *clientconfig.Store) {
+	reg, cfg, err := openStoreSilent()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "open settings:", err)
+		fmt.Fprintln(os.Stderr, "open store:", err)
 		os.Exit(1)
 	}
 	return reg, cfg
 }
 
-func cmdList() {
+func cmdList(stdout, stderr io.Writer) int {
 	reg, _ := openStore()
 	defer reg.Close()
 	list := reg.List()
 	if len(list) == 0 {
-		fmt.Println("(no devices)")
-		return
+		fmt.Fprintln(stdout, "(no devices)")
+		return 0
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	for _, d := range list {
 		online := "offline"
 		if d.Online {
@@ -105,9 +144,10 @@ func cmdList() {
 			online, d.DeviceID, d.IP, d.Port, d.LastSource)
 	}
 	_ = w.Flush()
+	return 0
 }
 
-func cmdScan(args []string) {
+func cmdScan(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 	cidr := fs.String("cidr", "", "CIDR to scan (default: auto)")
 	timeout := fs.Duration("timeout", 30*time.Second, "overall timeout")
@@ -129,40 +169,38 @@ func cmdScan(args []string) {
 		}
 	}
 	if target == "" {
-		fmt.Fprintln(os.Stderr, "no subnet detected; pass --cidr")
-		os.Exit(1)
+		fmt.Fprintln(stderr, "no subnet detected; pass --cidr")
+		return 1
 	}
-	fmt.Fprintf(os.Stderr, "scanning %s (timeout=%s)\n", target, *timeout)
+	fmt.Fprintf(stderr, "scanning %s (timeout=%s)\n", target, *timeout)
 	if err := s.ScanSubnet(ctx, target, *timeout); err != nil {
-		fmt.Fprintln(os.Stderr, "scan:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "scan:", err)
+		return 1
 	}
+	return 0
 }
 
-// infoCmd prints the cached /api/v1/info response for a device from
-// the local registry as JSON. Run `spotter-cli scan` first to
-// refresh the cache; the CLI intentionally has no live-poll path
-// (use the GUI for that).
-func cmdInfo(args []string) {
+func cmdInfo(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: spotter-cli info <device_id>")
-		os.Exit(2)
+		fmt.Fprintln(stderr, "usage: spotter-cli info <device_id>")
+		return 2
 	}
 	id := args[0]
 	reg, _ := openStore()
 	defer reg.Close()
 	fresh, ok := reg.Get(id)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "device not in registry")
-		os.Exit(1)
+		fmt.Fprintln(stderr, "device not in registry")
+		return 1
 	}
 	if fresh.LastInfo == nil {
-		fmt.Fprintln(os.Stderr, "no cached info; run 'spotter-cli scan' first")
-		os.Exit(1)
+		fmt.Fprintln(stderr, "no cached info; run 'spotter-cli scan' first")
+		return 1
 	}
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(fresh.LastInfo)
+	return 0
 }
 
 // mainpkgLocalSubnets re-implements main.go's LocalSubnets inline
