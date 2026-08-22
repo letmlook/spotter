@@ -196,8 +196,12 @@ When enabled, the agent accepts `POST /api/v1/reboot` and `/api/v1/shutdown`. Un
 
 ## UDP multicast packet (group `239.255.42.42:9999`)
 
-Each agent broadcasts a small JSON packet every 60 s. The packet is the
-minimum needed to bootstrap the client before any HTTP round-trip.
+Each agent periodically (default 5s, controlled by `hello_interval`)
+broadcasts a small JSON packet on the multicast group — both
+responding to a client-originated HELLO (HELLO_REPLY) and **proactively
+emitting** its own HELLO so the client can detect an online transition
+without first sending a request. The packet is the minimum needed to
+bootstrap the client before any HTTP round-trip.
 
 ```
 {

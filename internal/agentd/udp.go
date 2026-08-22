@@ -11,6 +11,13 @@ import (
 	"github.com/spotter/spotter/internal/protocol"
 )
 
+// helloInterval is the default cadence at which the agent proactively
+// emits a HELLO packet on the multicast group. Short enough that the
+// client's GUI sees online transitions within ~one interval even when
+// HTTP polls are blocked (firewall, host down, etc.); long enough that
+// the multicast traffic stays below noise levels on busy LANs.
+const helloInterval = 5 * time.Second
+
 // StartUDP begins listening on the configured multicast group. Returns
 // once the listener is up; the read loop runs in the background until
 // ctx is cancelled.
@@ -90,5 +97,74 @@ func (a *Agent) replyToHELLO(src *net.UDPAddr) {
 	defer conn.Close()
 	if _, err := conn.Write(data); err != nil {
 		a.logger.Debug("write reply", slog.String("err", err.Error()))
+	}
+}
+
+// helloEmitInterval returns the configured emit cadence, falling back
+// to the package default when zero.
+func (a *Agent) helloEmitInterval() time.Duration {
+	if a.cfg.HelloInterval > 0 {
+		return a.cfg.HelloInterval
+	}
+	return helloInterval
+}
+
+// runHelloEmit proactively broadcasts a HELLO packet to the multicast
+// group on a fixed cadence so the client can detect online transitions
+// without waiting for its own slower poll cycle. Exits when ctx is
+// cancelled. Errors are logged at Debug so a transient network blip
+// doesn't spam the journal.
+func (a *Agent) runHelloEmit(ctx context.Context) {
+	addr, err := net.ResolveUDPAddr("udp", a.cfg.MulticastGroup)
+	if err != nil {
+		a.logger.Error("resolve mcast", slog.String("err", err.Error()))
+		return
+	}
+	// Dial once and reuse the connection for every emit; the kernel
+	// handles the rest. This is a write-only socket — we never read
+	// from it (the listener in StartUDP owns that role).
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		a.logger.Error("dial mcast", slog.String("err", err.Error()))
+		return
+	}
+	defer conn.Close()
+
+	interval := a.helloEmitInterval()
+	a.logger.Info("hello emit started",
+		slog.String("group", a.cfg.MulticastGroup),
+		slog.Duration("interval", interval),
+	)
+	// Emit once immediately so a freshly-started agent shows up in the
+	// client before the first interval tick.
+	a.emitHello(conn)
+
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			a.emitHello(conn)
+		}
+	}
+}
+
+// emitHello marshals and writes a single HELLO packet to conn. Called
+// from runHelloEmit; factored out so the test surface stays small.
+func (a *Agent) emitHello(conn *net.UDPConn) {
+	pkt := protocol.HelloPacket{
+		Type:     "hello",
+		SenderID: a.cfg.DeviceID,
+		TS:       time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(pkt)
+	if err != nil {
+		a.logger.Debug("marshal hello", slog.String("err", err.Error()))
+		return
+	}
+	if _, err := conn.Write(data); err != nil {
+		a.logger.Debug("write hello", slog.String("err", err.Error()))
 	}
 }

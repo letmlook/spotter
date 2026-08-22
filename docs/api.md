@@ -194,8 +194,7 @@ enable_power_actions = true   # 默认 true
 
 ## UDP 组播包（组地址 `239.255.42.42:9999`）
 
-每个 agent 每 60 s 广播一个小型 JSON 包。这个包只包含 client 首次见到
-一个设备需要的最小信息。
+每个 agent 周期性地（默认 5s，由 `hello_interval` 控制）在组播组上广播一个小型 JSON 包 —— 既响应 client 主动发来的 HELLO（HELLO_REPLY），也**主动**发自己的 HELLO 让 client 在没有反向请求的情况下也能立即识别上线。这个包只包含 client 首次见到一个设备需要的最小信息。
 
 ```
 {

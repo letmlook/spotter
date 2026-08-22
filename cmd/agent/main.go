@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -27,13 +28,14 @@ const defaultListenAddr = "0.0.0.0:9999"
 const defaultMulticastGroup = "239.255.42.42:9999"
 
 type tomlConfig struct {
-	DeviceID           string `toml:"device_id"`
-	ListenAddr         string `toml:"listen_addr"`
-	MulticastGroup     string `toml:"multicast_group"`
-	AgentVersion       string `toml:"agent_version"`
-	EnablePowerActions bool   `toml:"enable_power_actions"`
-	EnableLogStream    bool   `toml:"enable_log_stream"`
-	LogUnit            string `toml:"log_unit"`
+	DeviceID           string        `toml:"device_id"`
+	ListenAddr         string        `toml:"listen_addr"`
+	MulticastGroup     string        `toml:"multicast_group"`
+	AgentVersion       string        `toml:"agent_version"`
+	EnablePowerActions bool          `toml:"enable_power_actions"`
+	EnableLogStream    bool          `toml:"enable_log_stream"`
+	LogUnit            string        `toml:"log_unit"`
+	HelloInterval      time.Duration `toml:"hello_interval"`
 }
 
 func main() {
@@ -71,6 +73,7 @@ func main() {
 		EnablePowerActions: cfg.EnablePowerActions,
 		EnableLogStream:    cfg.EnableLogStream,
 		LogUnit:            cfg.LogUnit,
+		HelloInterval:      cfg.HelloInterval,
 	}, log)
 	if err != nil {
 		log.Error("create agent", slog.String("err", err.Error()))

@@ -16,9 +16,10 @@ type Config struct {
 	ListenAddr         string
 	MulticastGroup     string
 	AgentVersion       string
-	EnablePowerActions bool   // opt-in: allow POST /api/v1/reboot & /shutdown
-	EnableLogStream    bool   // opt-in: allow GET /api/v1/logs
-	LogUnit            string // journalctl -u unit name; default "spotterd.service"
+	EnablePowerActions bool          // opt-in: allow POST /api/v1/reboot & /shutdown
+	EnableLogStream    bool          // opt-in: allow GET /api/v1/logs
+	LogUnit            string        // journalctl -u unit name; default "spotterd.service"
+	HelloInterval      time.Duration // proactive HELLO cadence; default 5s (see udp.go)
 }
 
 // Agent owns the cached DeviceInfo and exposes it to the HTTP/UDP layers.

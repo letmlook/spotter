@@ -35,6 +35,7 @@ agent_version = "${SPOTTER_AGENT_VERSION:-0.1.0}"
 enable_power_actions = true
 enable_log_stream = true
 log_unit = "spotterd.service"
+hello_interval = "5s"
 EOF
 
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"

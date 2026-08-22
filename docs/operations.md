@@ -51,11 +51,18 @@ device_id        = "9d1f2c5e-…"     # UUID v4，由 install.sh 生成
 listen_addr      = "0.0.0.0:9999"   # 监听接口与端口
 multicast_group  = "239.255.42.42:9999"  # 发现组
 agent_version    = "0.1.0"          # 由 install.sh 写入
+hello_interval   = "5s"             # 主动 HELLO 周期；0 或缺失 → 默认 5s
 ```
 
 默认开启：`enable_power_actions = true` 以启用 GUI 远程电源管理；如需关闭，在 `agent.toml` 中显式设置 `enable_power_actions = false`。
 
 默认开启：`enable_log_stream = true` 以启用 GUI 实时日志查看（可配合 `log_unit` 字段指定其他 systemd unit）；如需关闭，在 `agent.toml` 中显式设置 `enable_log_stream = false`。
+
+`hello_interval` 控制 agent 在组播组上主动广播 HELLO 的频率。客户端
+（client）会监听这些 HELLO，把已注册设备立即标记为 online —— 这条路径
+绕开了 HTTP 轮询，因此在 client 端 mcast 周期 + 一次 RTT 之内就能看到
+设备上线。降低 `hello_interval`（最小建议 1s）能进一步缩短上线延迟，但
+会成倍增加组播流量；正常网络下保持默认 5s 即可。
 
 修改监听端口：
 

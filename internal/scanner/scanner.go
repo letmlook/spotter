@@ -68,10 +68,18 @@ func (o Options) withDefaults() Options {
 		o.LogHTTPClient = &http.Client{Timeout: 0} // 跟随 ctx
 	}
 	if o.PollInterval == 0 {
-		o.PollInterval = 30 * time.Second
+		// Short cadence so device online/offline transitions surface in
+		// the GUI within ~one interval. The agent also emits HELLO every
+		// 5s (see internal/agentd/udp.go), so the worst-case online
+		// latency is bounded by this value; offline latency is bounded
+		// by PollInterval * pollFailures.threshold (currently 3).
+		o.PollInterval = 5 * time.Second
 	}
 	if o.McastInterval == 0 {
-		o.McastInterval = 60 * time.Second
+		// Matches the agent's proactive HELLO cadence. The mcast loop
+		// both sends a HELLO (to elicit HELLO_REPLY from agents) and
+		// passively listens for agent HELLOs.
+		o.McastInterval = 5 * time.Second
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
