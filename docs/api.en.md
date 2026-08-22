@@ -128,6 +128,44 @@ A nil / missing `jetson` field signals the agent is not on a Jetson
 board. Don't pattern-match the field name to decide; pattern-match
 its presence.
 
+## `POST /api/v1/reboot`
+
+Requests the device to reboot. Only effective when `enable_power_actions = true` in the agent config.
+
+Request:
+- Headers: no body required.
+
+Response (200/202, scheduled):
+```json
+{
+  "status": "scheduled",
+  "action": "reboot"
+}
+```
+
+Response (403, disabled):
+```json
+{
+  "error": "power actions disabled"
+}
+```
+
+Response (405, non-POST): plain text `method not allowed`.
+
+## `POST /api/v1/shutdown`
+
+Same as reboot, but invokes `systemctl poweroff`. **Irreversible** — the device requires manual power-on.
+
+## `enable_power_actions`
+
+`/etc/spotterd/agent.toml`:
+
+```toml
+enable_power_actions = true   # default false
+```
+
+When enabled, the agent accepts `POST /api/v1/reboot` and `/api/v1/shutdown`. Unauthenticated; deployer is responsible for network isolation.
+
 ## UDP multicast packet (group `239.255.42.42:9999`)
 
 Each agent broadcasts a small JSON packet every 60 s. The packet is the

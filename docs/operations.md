@@ -53,6 +53,8 @@ multicast_group  = "239.255.42.42:9999"  # 发现组
 agent_version    = "0.1.0"          # 由 install.sh 写入
 ```
 
+可选：在 `agent.toml` 中设置 `enable_power_actions = true` 以启用 GUI 远程电源管理（默认关闭）。
+
 修改监听端口：
 
 ```bash

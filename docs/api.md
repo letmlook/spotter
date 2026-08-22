@@ -126,6 +126,44 @@ client 的手动子网扫描用它过滤候选，然后再请求 `/api/v1/info`�
 `jetson` 字段为 nil / 缺失说明这台不是 Jetson。**判别时以字段是否出现
 为准，不要按字段名做模式匹配。**
 
+## `POST /api/v1/reboot`
+
+请求设备重启。**仅在 agent 配置 `enable_power_actions = true` 时生效**。
+
+请求：
+- Headers：`Content-Type` 不要求；无需 body。
+
+响应（200/202，命令已派发）：
+```json
+{
+  "status": "scheduled",
+  "action": "reboot"
+}
+```
+
+响应（403，未启用）：
+```json
+{
+  "error": "power actions disabled"
+}
+```
+
+响应（405，非 POST）：文本 `method not allowed`。
+
+## `POST /api/v1/shutdown`
+
+同 reboot，但调用 `systemctl poweroff`。**该操作不可逆**，需手动上电才能恢复。
+
+## `enable_power_actions`
+
+`/etc/spotterd/agent.toml`：
+
+```toml
+enable_power_actions = true   # 默认 false
+```
+
+开启后 agent 接受 `POST /api/v1/reboot` 与 `/api/v1/shutdown`。无身份认证，部署方负责网络隔离。
+
 ## UDP 组播包（组地址 `239.255.42.42:9999`）
 
 每个 agent 每 60 s 广播一个小型 JSON 包。这个包只包含 client 首次见到

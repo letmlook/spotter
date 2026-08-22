@@ -67,3 +67,7 @@ Spotter 为**可信 LAN** 设计。下列场景不在范围内，不视为安全
    知能邮件投递给到你。
 4. `scripts/deploy.sh` 只走公钥模式（密码模式会让密码残留在 shell 历
    史里）。
+5. 在启用 agent 的 `enable_power_actions = true` 前，确保设备在受控
+   VLAN / VPN 之后。
+6. `enable_power_actions = true` 等于授权该子网任何客户端触发 root 级
+   别的 reboot / poweroff。
