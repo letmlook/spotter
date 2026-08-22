@@ -130,7 +130,7 @@ export default function DetailPanel() {
                 </Button>
               </Space>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
               <BasicCard device={device} />
               <JetsonCard device={device} />
             </div>
