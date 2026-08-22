@@ -130,20 +130,40 @@ machine.
 
 ### Option A: one-shot deploy script (recommended)
 
+The script supports two auth modes — **SSH public key** (preferred,
+no password when keys are already configured) or **password** (needs
+`sshpass` on mac/Linux or PuTTY's `plink` on Windows).
+
 **macOS / Linux** (developer machine):
 
 ```bash
-brew install hudochenkov/sshpass/sshpass   # one-time; on Debian/Ubuntu: apt install sshpass; on Fedora: dnf install sshpass
+# One-time install of sshpass (password mode only; key mode doesn't need it)
+brew install hudochenkov/sshpass/sshpass   # Debian/Ubuntu: apt install sshpass; Fedora: dnf install sshpass
+
 make agent-linux-arm64                    # or agent-linux-x64
-./scripts/deploy.sh nvidia <password> 10.0.5.23           # default arm64
-./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64     # explicit amd64
+
+# Key mode (preferred): the public key is already in ssh-agent / ~/.ssh
+./scripts/deploy.sh nvidia 10.0.5.23
+./scripts/deploy.sh nvidia 10.0.5.23 amd64
+
+# Password mode: when no key is configured
+./scripts/deploy.sh nvidia <password> 10.0.5.23
+./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-# Install PuTTY once: https://putty.org  or  choco install putty
+# One-time install of PuTTY (password mode needs plink/pscp; key mode
+# can use Pageant only). https://putty.org  or  choco install putty
+
 make agent-linux-arm64
+
+# Key mode (preferred): Pageant / ssh-agent has the key loaded
+.\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23
+.\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23 -Arch amd64
+
+# Password mode: when no key is configured
 .\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23
 .\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23 -Arch amd64
 ```

@@ -89,10 +89,16 @@ export default function DeviceSetupGuide({ open, onClose }: DeviceSetupGuideProp
                   description={
                     <Space direction="vertical" size={4}>
                       <span>From your dev machine, run:</span>
-                      <CodeBlock>{`# macOS / Linux
+                      <CodeBlock>{`# macOS / Linux — SSH key auth (preferred, no password)
+./scripts/deploy.sh <user> <ip>
+
+# macOS / Linux — password auth
 ./scripts/deploy.sh <user> <password> <ip>
 
-# Windows PowerShell
+# Windows PowerShell — key auth (Pageant / ssh-agent)
+.\\scripts\\deploy.ps1 -User <user> -Ip <ip>
+
+# Windows PowerShell — password auth
 .\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip>`}</CodeBlock>
                       <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
                     </Space>
@@ -141,10 +147,16 @@ scp scripts/install.sh          user@<device>:/tmp/install.sh`}</CodeBlock>
                   description={
                     <Space direction="vertical" size={4}>
                       <span>From your dev machine, run:</span>
-                      <CodeBlock>{`# macOS / Linux
+                      <CodeBlock>{`# macOS / Linux — SSH key auth (preferred, no password)
+./scripts/deploy.sh <user> <ip> amd64
+
+# macOS / Linux — password auth
 ./scripts/deploy.sh <user> <password> <ip> amd64
 
-# Windows PowerShell
+# Windows PowerShell — key auth (Pageant / ssh-agent)
+.\\scripts\\deploy.ps1 -User <user> -Ip <ip> -Arch amd64
+
+# Windows PowerShell — password auth
 .\\scripts\\deploy.ps1 -User <user> -Password <password> -Ip <ip> -Arch amd64`}</CodeBlock>
                       <span>The script uploads spotterd, the systemd unit, and install.sh, then runs the installer and verifies /healthz.</span>
                     </Space>

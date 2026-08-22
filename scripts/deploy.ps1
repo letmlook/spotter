@@ -7,17 +7,23 @@
   then runs install.sh on the target. Equivalent to scripts/deploy.sh
   but for Windows PowerShell.
 
+  When -Password is omitted (or empty), the script falls back to
+  PuTTY's default authentication chain — pageant / ssh-agent /
+  %USERPROFILE%\.ssh\id_rsa etc. — so you can use it on hosts where
+  the SSH key has already been provisioned.
+
 .PARAMETER User
   SSH username on the target.
 
-.PARAMETER Password
-  SSH password for that user. The user must be passwordless-sudo on
-  the target so install.sh can run `sudo bash /tmp/install.sh`
-  without an interactive prompt. If that isn't the case, run the
-  manual scp/ssh steps from the README instead.
-
 .PARAMETER Ip
   IP address of the target.
+
+.PARAMETER Password
+  SSH password for that user. Optional — omit it to use SSH key
+  auth. The user must be passwordless-sudo on the target so
+  install.sh can run `sudo bash /tmp/install.sh` without an
+  interactive prompt. If that isn't the case, run the manual scp
+  /ssh steps from the README instead.
 
 .PARAMETER Arch
   Target architecture: arm64 (default) or amd64.
@@ -26,8 +32,9 @@
   SSH port on the target (default 22).
 
 .EXAMPLE
-  PS> .\scripts\deploy.ps1 -User nvidia -Password secret -Ip 10.0.5.23
-  PS> .\scripts\deploy.ps1 -User nvidia -Password secret -Ip 10.0.5.23 -Arch amd64
+  PS> .\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23                 # key auth
+  PS> .\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23 -Arch amd64     # key auth, amd64
+  PS> .\scripts\deploy.ps1 -User nvidia -Password secret -Ip 10.0.5.23 # password auth
   PS> $env:SPOTTER_PASS = 'secret'; .\scripts\deploy.ps1 -User nvidia -Password $env:SPOTTER_PASS -Ip 10.0.5.23
 
 .NOTES
@@ -35,15 +42,15 @@
   install location. Install PuTTY from https://putty.org or via
   `choco install putty` / `scoop install putty`.
 
-  Passing the password as a parameter is convenient but stores it in
-  the shell history. Prefer setting it via an environment variable.
+  Passing -Password on the command line stores it in shell history.
+  Prefer setting it via an environment variable when possible.
 #>
 
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$User,
-  [Parameter(Mandatory)][string]$Password,
   [Parameter(Mandatory)][string]$Ip,
+  [string]$Password = '',
   [ValidateSet('arm64','amd64')][string]$Arch = 'arm64',
   [int]$Port = 22
 )
@@ -81,8 +88,18 @@ function Find-PuttyTool {
 $plink = Find-PuttyTool 'plink'
 $pscp  = Find-PuttyTool 'pscp'
 
-$plinkArgs = @('-batch', '-P', $Port, '-pw', $Password)
-$pscpArgs  = @('-batch', '-P', $Port, '-pw', $Password)
+# Build plink/pscp arg lists. -pw is omitted entirely when no
+# password is supplied so PuTTY falls back to its default auth
+# chain (pageant / ssh-agent / %USERPROFILE%\.ssh\id_*).
+if ($Password) {
+  $plinkArgs = @('-batch', '-P', $Port, '-pw', $Password)
+  $pscpArgs  = @('-batch', '-P', $Port, '-pw', $Password)
+  Write-Host '==> password supplied — using plink -pw' -ForegroundColor Cyan
+} else {
+  $plinkArgs = @('-batch', '-P', $Port)
+  $pscpArgs  = @('-batch', '-P', $Port)
+  Write-Host '==> no password supplied — using SSH key auth (pageant / ssh-agent)' -ForegroundColor Cyan
+}
 
 function Step { param([string]$Msg) Write-Host "==> $Msg" -ForegroundColor Cyan }
 function Ok   { param([string]$Msg) Write-Host " ok] $Msg" -ForegroundColor Green }

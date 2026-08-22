@@ -111,20 +111,38 @@ GUI 客户端只负责发现 / 展示信息；`spotterd` 需要在每台目标�
 
 ### 方式一：使用一键部署脚本（推荐）
 
+脚本支持两种认证模式 —— **SSH 公钥**（推荐，公钥已配置时无需密码）或 **密码**（需要 sshpass / PuTTY）。
+
 **macOS / Linux**（开发者机器）：
 
 ```bash
-brew install hudochenkov/sshpass/sshpass   # 一次性安装依赖（Debian/Ubuntu: apt install sshpass；Fedora: dnf install sshpass）
+# 一次性安装 sshpass（仅密码模式需要；公钥模式不需要）
+brew install hudochenkov/sshpass/sshpass   # Debian/Ubuntu: apt install sshpass；Fedora: dnf install sshpass
+
 make agent-linux-arm64                    # 或 agent-linux-x64
-./scripts/deploy.sh nvidia <password> 10.0.5.23           # 默认 arm64
-./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64     # 显式 amd64
+
+# 公钥模式（推荐）：公钥已在 ssh-agent / ~/.ssh 中，目标机接受密钥认证
+./scripts/deploy.sh nvidia 10.0.5.23
+./scripts/deploy.sh nvidia 10.0.5.23 amd64
+
+# 密码模式：未配公钥时使用，密码经 sshpass 传递
+./scripts/deploy.sh nvidia <password> 10.0.5.23
+./scripts/deploy.sh nvidia <password> 10.0.5.23 amd64
 ```
 
 **Windows**（PowerShell）：
 
 ```powershell
-# 安装 PuTTY（一次性）：https://putty.org  或  choco install putty
+# 一次性安装 PuTTY（密码模式需要；公钥模式可只装 Pageant）
+# https://putty.org  或  choco install putty
+
 make agent-linux-arm64
+
+# 公钥模式（推荐）：Pageant / ssh-agent 中已有密钥时省略 -Password
+.\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23
+.\scripts\deploy.ps1 -User nvidia -Ip 10.0.5.23 -Arch amd64
+
+# 密码模式：未配公钥时使用
 .\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23
 .\scripts\deploy.ps1 -User nvidia -Password <password> -Ip 10.0.5.23 -Arch amd64
 ```
