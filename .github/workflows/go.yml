@@ -203,11 +203,16 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          # Pin to v1.61+ to avoid the v1.59 remote JSON-schema
-          # fetch timeout; use `latest` here in CI so golangci-lint
-          # is built with a Go toolchain >= go.mod's `go 1.25.0`
-          # (v1.61.0's binary is built with Go 1.23, which now
-          # refuses to load .golangci.yml under a newer target).
+          # Pin to a v2.x build of golangci-lint. v1.x caps out around
+          # v1.64.8, whose binary is still built with Go 1.24; that
+          # refuses to load a config from a project declaring
+          # `go 1.25.0` with "the Go language version (go1.24) used
+          # to build golangci-lint is lower than the targeted Go
+          # version (1.25.0)". v2 has a built-with-Go-1.25 line.
+          # Our .golangci.yml uses v1-style keys (disable-all,
+          # linters.<id>); v2 reads those with deprecation hints
+          # rather than refusing to load.
+          version: v2.5.0
           # `only-new-issues` keeps the action idempotent on long
           # branches by only flagging PR-introduced issues.
           only-new-issues: true
