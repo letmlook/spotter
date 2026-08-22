@@ -201,17 +201,11 @@ jobs:
         run: go mod tidy
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          # Pin to a v2.x build of golangci-lint. v1.x caps out around
-          # v1.64.8, whose binary is still built with Go 1.24; that
-          # refuses to load a config from a project declaring
-          # `go 1.25.0` with "the Go language version (go1.24) used
-          # to build golangci-lint is lower than the targeted Go
-          # version (1.25.0)". v2 has a built-with-Go-1.25 line.
-          # Our .golangci.yml uses v1-style keys (disable-all,
-          # linters.<id>); v2 reads those with deprecation hints
-          # rather than refusing to load.
+          # v7 ships with golangci-lint v2 support; the v6 action
+          # rejects v2 with "invalid version string 'v2.x',
+          # you must update to golangci-lint-action v7".
           version: v2.5.0
           # `only-new-issues` keeps the action idempotent on long
           # branches by only flagging PR-introduced issues.
