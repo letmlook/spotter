@@ -10,7 +10,8 @@ type DeviceInfo struct {
 	AgentVersion  string      `json:"agent_version"`
 	Basic         BasicInfo   `json:"basic"`
 	Network       NetworkInfo `json:"network"`
-	Jetson        *JetsonInfo `json:"jetson"` // nil means "not a Jetson" or probe failed
+	Jetson        *JetsonInfo `json:"jetson"`            // nil means "not a Jetson" or probe failed
+	Auth          *AuthInfo   `json:"auth,omitempty"`    // v2: present iff the agent has [auth] enabled
 }
 
 type BasicInfo struct {
@@ -48,4 +49,12 @@ type JetsonInfo struct {
 	TensorRT string `json:"tensorrt"`
 	Python   string `json:"python"`
 	Serial   string `json:"serial"`
+}
+
+// AuthInfo is embedded in DeviceInfo when the agent has auth enabled.
+// Old (v1) clients ignore the field entirely; newer clients surface
+// "Token required" in the device row and prompt for the token in
+// Settings.
+type AuthInfo struct {
+	Required bool `json:"required"` // when true, /api/v1/{reboot,shutdown,logs} demand a Bearer token
 }

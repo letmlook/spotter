@@ -34,7 +34,7 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/reboot", a.handlePowerAction("reboot"))
 	mux.HandleFunc("/api/v1/shutdown", a.handlePowerAction("shutdown"))
 	mux.HandleFunc("/api/v1/logs", a.handleLogs)
-	return a.recoverMiddleware(mux)
+	return a.recoverMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger))
 }
 
 func (a *Agent) handleHealthz(w http.ResponseWriter, _ *http.Request) {

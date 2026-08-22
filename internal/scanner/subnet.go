@@ -104,7 +104,7 @@ func (s *Scanner) probeOne(ctx context.Context, ip net.IP) {
 	}
 
 	url := "http://" + addr + "/api/v1/info"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := s.newRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		s.opts.Logger.Debug("subnet probe build request failed",
 			"ip", ip.String(), "err", err.Error())

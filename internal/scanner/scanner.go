@@ -58,6 +58,30 @@ type Options struct {
 	DevicePort     int
 	MulticastGroup string
 	ClientSenderID string
+	// AuthToken, when non-empty, is sent as `Authorization: Bearer <token>`
+	// on every HTTP request (poll, subnet probe, log stream, power actions).
+	// Empty by default; opt-in via WithAuthToken.
+	AuthToken string
+}
+
+// WithAuthToken sets the bearer token used for Authorization headers.
+func WithAuthToken(token string) func(*Options) {
+	return func(o *Options) { o.AuthToken = token }
+}
+
+// newRequest is the single source for HTTP requests issued by the
+// scanner; centralising here lets us stamp the Authorization header
+// once instead of remembering to do it at every call site. method
+// is the HTTP verb; url is the absolute endpoint.
+func (s *Scanner) newRequest(ctx context.Context, method, url string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.opts.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.opts.AuthToken)
+	}
+	return req, nil
 }
 
 func (o Options) withDefaults() Options {
@@ -193,7 +217,7 @@ func (s *Scanner) ShutdownDevice(ctx context.Context, ip string, port int) error
 
 func (s *Scanner) postPowerAction(ctx context.Context, ip string, port int, action string) error {
 	target := fmt.Sprintf("http://%s:%d/api/v1/%s", ip, port, action)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
+	req, err := s.newRequest(ctx, http.MethodPost, target)
 	if err != nil {
 		return err
 	}
@@ -210,6 +234,8 @@ func (s *Scanner) postPowerAction(ctx context.Context, ip string, port int, acti
 		return nil
 	case http.StatusForbidden:
 		return fmt.Errorf("power actions disabled")
+	case http.StatusUnauthorized:
+		return fmt.Errorf("power action %q: token required", action)
 	default:
 		return fmt.Errorf("power action %q: unexpected status %d", action, resp.StatusCode)
 	}

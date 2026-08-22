@@ -86,3 +86,60 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+func TestSchemaVersion_IsTwo(t *testing.T) {
+	if protocol.SchemaVersion != 2 {
+		t.Fatalf("SchemaVersion = %d, want 2 (v0.3 bumped for AuthInfo)", protocol.SchemaVersion)
+	}
+}
+
+func TestDeviceInfoAuth_OmitEmptyWhenDisabled(t *testing.T) {
+	info := protocol.DeviceInfo{
+		SchemaVersion: protocol.SchemaVersion,
+		DeviceID:      "no-auth",
+		// Auth left nil: must NOT appear in JSON.
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(data), `"auth"`) {
+		t.Errorf("expected auth field omitted when nil, got: %s", string(data))
+	}
+}
+
+func TestDeviceInfoAuth_RoundTripWhenRequired(t *testing.T) {
+	info := protocol.DeviceInfo{
+		SchemaVersion: protocol.SchemaVersion,
+		DeviceID:      "with-auth",
+		Auth:          &protocol.AuthInfo{Required: true},
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.DeviceInfo
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Auth == nil || !got.Auth.Required {
+		t.Fatalf("expected Auth.Required=true after roundtrip, got %+v", got.Auth)
+	}
+}
+
+func TestDeviceInfoAuth_BackCompatOldClientIgnoresField(t *testing.T) {
+	// Simulate a v1-only client reading a v2 wire payload. v1
+	// schema only knows schema_version/device_id/basic/network/jetson;
+	// the `auth` field must be ignored by Go's default decode.
+	const v2payload = `{"schema_version":2,"device_id":"x","auth":{"required":true}}`
+	var got protocol.DeviceInfo
+	if err := json.Unmarshal([]byte(v2payload), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.DeviceID != "x" {
+		t.Errorf("DeviceID: %q", got.DeviceID)
+	}
+	if got.Auth == nil || !got.Auth.Required {
+		t.Errorf("expected Auth.Required true; got %+v", got.Auth)
+	}
+}

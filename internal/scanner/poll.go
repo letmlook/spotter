@@ -66,7 +66,12 @@ func (s *Scanner) PollOnce(ctx context.Context) error {
 
 func (s *Scanner) pollOne(ctx context.Context, e registry.Entry, fails *pollFailures) {
 	url := fmt.Sprintf("http://%s:%d/api/v1/info", e.IP, e.Port)
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := s.newRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		s.opts.Logger.Debug("poll build request",
+			"device", e.DeviceID, "err", err.Error())
+		return
+	}
 	resp, err := s.opts.HTTPClient.Do(req)
 	if err != nil {
 		s.handlePollFailure(e, fails, err)
@@ -74,7 +79,7 @@ func (s *Scanner) pollOne(ctx context.Context, e registry.Entry, fails *pollFail
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-		// 4xx: incompatible — leave online state alone
+		// 4xx: incompatible or unauthorised — leave online state alone
 		s.opts.Logger.Debug("poll 4xx", "device", e.DeviceID, "status", resp.StatusCode)
 		return
 	}
