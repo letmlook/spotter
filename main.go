@@ -30,6 +30,12 @@ import (
 //go:embed all:frontend/dist
 var uiFS embed.FS
 
+// appIcon is the PNG payload used by the macOS "About" dialog. The
+// .icns file is generated separately and embedded into the .app bundle
+// by Wails via build/darwin/iconfile.icns (see build/darwin/Info.plist).
+//go:embed build/appicon.png
+var appIcon []byte
+
 // deployUsername is the SSH user assumed when deploying via the GUI.
 // MVP: hardcoded — v1.x may prompt per-device.
 const deployUsername = "fitow"
@@ -91,6 +97,11 @@ func main() {
 			},
 			Appearance:           mac.NSAppearanceNameDarkAqua,
 			WebviewIsTransparent: false,
+			About: &mac.AboutInfo{
+				Title:   "Spotter",
+				Message: "© 2026 Spotter Dev",
+				Icon:    appIcon,
+			},
 		},
 		Linux: &linux.Options{
 			ProgramName: "Spotter",

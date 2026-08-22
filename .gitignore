@@ -1,7 +1,15 @@
 # Build artifacts
 /bin/
 /dist/
-/build/
+# Ignore every build/ entry by default, but keep the macOS bundle
+# metadata + icon under source control (Info.plist is templated by
+# 'wails build'; iconfile.icns is generated from build/appicon.png and
+# embedded into Spotter.app's Contents/Resources).
+/build/*
+!/build/appicon.png
+!/build/darwin/
+!/build/darwin/Info.plist
+!/build/darwin/iconfile.icns
 /build/bin/
 *.exe
 *.test
