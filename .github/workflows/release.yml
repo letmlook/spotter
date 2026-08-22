@@ -212,10 +212,11 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           generate_release_notes: true
-          # Wails-built macOS / Windows clients are produced on those
-          # hosts by release engineers (see README "全平台打包" section)
-          # and uploaded here as binary uploads. The workflow itself does
-          # not attempt to build them; doing so requires per-OS runners.
+          # Includes both the agent binaries (built by this workflow's
+          # `build` matrix) and the Linux client artifact produced by
+          # `client-linux`. macOS / Windows clients are still built
+          # manually on the matching OS host (see README "全平台打包")
+          # and uploaded as a follow-up release edit if needed.
           files: |
             dist/spotterd-linux-arm64
             dist/spotterd-linux-x64

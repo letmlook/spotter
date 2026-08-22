@@ -203,10 +203,13 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61.0
-          # Pin to v1.61+ to avoid v1.59's remote JSON-schema fetch
-          # (`golangci-lint.run/jsonschema/golangci.v1.59.jsonschema.json`)
-          # which times out on the runner.
+          # Pin to v1.61+ to avoid the v1.59 remote JSON-schema
+          # fetch timeout; use `latest` here in CI so golangci-lint
+          # is built with a Go toolchain >= go.mod's `go 1.25.0`
+          # (v1.61.0's binary is built with Go 1.23, which now
+          # refuses to load .golangci.yml under a newer target).
+          # `only-new-issues` keeps the action idempotent on long
+          # branches by only flagging PR-introduced issues.
           only-new-issues: true
           args: --timeout=5m
 
