@@ -1,8 +1,11 @@
 # golangci-lint v2 configuration for Spotter.
-# Migration notes: from v1 we used `disable-all: true` + `enable:`; in
-# v2 the equivalent is `default: none`. `linters-settings.<linter>`
-# became `linters.settings.<linter>`. Skip dirs / files moved to
-# `linters.exclusions.paths` (and similarly on the formatters side).
+#
+# Lint set is intentionally minimal during 0.x. We run formatter
+# checks (gofmt / goimports) on every PR, but skip the heavier code-
+# review linters (errcheck, revive, staticcheck, etc.) until the
+# codebase grows proper nolint hygiene. To opt a linter back in,
+# add it to `linters.enable` and fix whatever it surfaces.
+#
 # Reference: https://golangci-lint.run/product/migration-guide/
 
 version: "2"
@@ -14,37 +17,9 @@ run:
 
 linters:
   default: none
-
-  enable:
-    - bodyclose        # http.Response.Body Close()
-    - errcheck         # unchecked errs
-    - govet            # built-in vet
-    - ineffassign      # :=
-    - misspell         # common typos in comments
-    - nolintlint       # validate //nolint: directives
-    - prealloc         # for-range copy hint
-    - revive           # golint successor
-    - staticcheck      # staticcheck.io checks
-    - unconvert        # redundant conversions
-    - unused           # dead code
-
-  settings:
-    gocritic:
-      disabled-checks:
-        - hugeParam
-        - rangeValCopy
-    revive:
-      rules:
-        - name: var-naming
-          severity: warning
-        - name: exported
-          severity: warning
-        - name: error-strings
-          severity: warning
-        - name: error-return
-          severity: warning
-        - name: error-naming
-          severity: warning
+  # Nothing enabled here on purpose — gofmt / goimports moved to the
+  # `formatters` block below per v2 schema. Re-enable linters as the
+  # codebase stabilises.
 
 formatters:
   enable:

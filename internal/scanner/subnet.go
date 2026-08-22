@@ -56,15 +56,12 @@ func (s *Scanner) ScanSubnet(ctx context.Context, cidr string, overallTimeout ti
 func expandCIDR(ipnet *net.IPNet) []net.IP {
 	var out []net.IP
 	ip := ipnet.IP.Mask(ipnet.Mask)
-	for {
-		if !ipnet.Contains(ip) {
-			break
-		}
+	// `nextIP` returns nil once it would overflow 255.255.255.255;
+	// guarding the `for` condition (rather than a leading `if {break}`)
+	// is what staticcheck's QF1006 prefers.
+	for ip != nil && ipnet.Contains(ip) {
 		out = append(out, append(net.IP(nil), ip...))
 		ip = nextIP(ip)
-		if ip == nil {
-			break
-		}
 	}
 	return out
 }
