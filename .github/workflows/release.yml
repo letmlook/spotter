@@ -100,12 +100,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Wails runtime deps (gtk3 + webkit2gtk-4.1)
-        # Wails v2.7+ recommends webkit2gtk-4.1 on Linux. ubuntu-latest
-        # runner image is 24.04 LTS, which ships 4.1 in the default
-        # apt repo. If we ever switch to a 22.04 runner we'll need to
-        # backport via the Wails docs:
-        # https://wails.io/docs/gettingstarted/installation#linux
+      - name: Install Wails runtime deps (webkit2gtk-4.1)
+        # Wails v2.14.0 supports webkit2gtk-4.1 via the build tag
+        # `-tags webkit2_41`. ubuntu-latest (24.04) ships only 4.1
+        # by default, so this is the right combo on the modern runner.
+        # On older runners where 4.1 is not available, fall back to
+        # 4.0 (no build tag).
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -161,9 +161,11 @@ jobs:
           rm -f frontend/dist/.gitkeep
 
       - name: Build spotter-client (linux/amd64) with Wails
+        # `-tags webkit2_41` switches Wails to the webkit2gtk-4.1
+        # backend (required on Ubuntu 24.04+ where 4.0 is gone).
         working-directory: ${{ github.workspace }}
         run: |
-          wails build -clean -platform linux/amd64 -o spotter-client
+          wails build -clean -platform linux/amd64 -tags webkit2_41 -o spotter-client
           chmod +x build/bin/spotter-client
 
       - name: Upload spotter-client-linux-amd64

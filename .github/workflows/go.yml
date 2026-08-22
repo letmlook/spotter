@@ -152,6 +152,14 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
+      - name: Refresh go.sum (autofills wails sub-package h1 entries)
+        # Each job `actions/checkout`s a fresh working tree; the
+        # frontend-dist job's `go mod tidy` does NOT persist go.sum
+        # across jobs via artifacts, so we run it again here to make
+        # sure `go test ./...` and `golangci-lint` see a complete
+        # module graph (wails/pkg/options/*, wails/pkg/runtime).
+        run: go mod tidy
+
       - name: Verify module download integrity
         run: go mod download -x
 
@@ -186,12 +194,19 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
+      - name: Refresh go.sum
+        # Each job actions/checkouts a fresh working tree; the
+        # frontend-dist job's `go mod tidy` does not persist go.sum
+        # across jobs, so re-run it here.
+        run: go mod tidy
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.59.1
-          # `only-new-issues` keeps the action idempotent on long-lived
-          # branches by only flagging issues introduced by the PR.
+          version: v1.61.0
+          # Pin to v1.61+ to avoid v1.59's remote JSON-schema fetch
+          # (`golangci-lint.run/jsonschema/golangci.v1.59.jsonschema.json`)
+          # which times out on the runner.
           only-new-issues: true
           args: --timeout=5m
 
@@ -214,6 +229,9 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
+
+      - name: Refresh go.sum
+        run: go mod tidy
 
       - name: Build agent for host
         run: make agent
