@@ -5,13 +5,21 @@ package scanner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 )
+
+// ErrPowerActionTimeout is returned by RebootDevice/ShutdownDevice when
+// the HTTP client timed out. Callers (e.g. the Wails App) treat it as
+// "the command may have been sent" and surface an optimistic success.
+var ErrPowerActionTimeout = errors.New("scanner: power action timed out, device may have responded")
 
 // Event is the union of all scanner-produced events.
 type Event interface{ Tag() string }
@@ -81,6 +89,11 @@ func WithOnEvent(fn func(Event)) func(*Options) {
 	return func(o *Options) { o.OnEvent = fn }
 }
 
+// WithHTTPClient overrides the default HTTP client (used by Scanner.RebootDevice etc.).
+func WithHTTPClient(c *http.Client) func(*Options) {
+	return func(o *Options) { o.HTTPClient = c }
+}
+
 // Scanner runs the three discovery loops.
 type Scanner struct {
 	reg       *registry.Registry
@@ -125,3 +138,50 @@ func (s *Scanner) McastOnceForTest(ctx context.Context) {
 // HTTPClient exposes the configured HTTP client for one-off probes
 // (e.g. manual IP add from the UI when multicast is blocked).
 func (s *Scanner) HTTPClient() *http.Client { return s.opts.HTTPClient }
+
+// RebootDevice POSTs to /api/v1/reboot on the device. Returns
+// ErrPowerActionTimeout on client-side timeout (treated as "may have
+// succeeded" by callers); other errors are terminal.
+func (s *Scanner) RebootDevice(ctx context.Context, ip string, port int) error {
+	return s.postPowerAction(ctx, ip, port, "reboot")
+}
+
+// ShutdownDevice POSTs to /api/v1/shutdown. Same semantics as RebootDevice.
+func (s *Scanner) ShutdownDevice(ctx context.Context, ip string, port int) error {
+	return s.postPowerAction(ctx, ip, port, "shutdown")
+}
+
+func (s *Scanner) postPowerAction(ctx context.Context, ip string, port int, action string) error {
+	target := fmt.Sprintf("http://%s:%d/api/v1/%s", ip, port, action)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.opts.HTTPClient.Do(req)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || isHTTPClientTimeout(err) {
+			return ErrPowerActionTimeout
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusForbidden:
+		return fmt.Errorf("power actions disabled")
+	default:
+		return fmt.Errorf("power action %q: unexpected status %d", action, resp.StatusCode)
+	}
+}
+
+// isHTTPClientTimeout detects the http.Client's own timeout (not
+// context-driven). http.Client surfaces it as a *url.Error whose
+// Timeout() method returns true.
+func isHTTPClientTimeout(err error) bool {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Timeout() {
+		return true
+	}
+	return false
+}

@@ -3,10 +3,12 @@ package scanner_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,5 +259,81 @@ func TestSubnetScanRejectsLargeRange(t *testing.T) {
 	err := sc.ScanSubnet(context.Background(), "10.0.0.0/8", 1*time.Second)
 	if err == nil {
 		t.Error("expected error for range >4096 IPs")
+	}
+}
+
+func TestPostPowerAction_AcceptedReturnsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"scheduled","action":"reboot"}`))
+	}))
+	defer srv.Close()
+
+	reg, _ := registry.Open(filepath.Join(t.TempDir(), "devices.json"))
+	sc := scanner.New(reg)
+	addr := srv.Listener.Addr().(*net.TCPAddr)
+	if err := sc.RebootDevice(context.Background(), addr.IP.String(), addr.Port); err != nil {
+		t.Fatalf("reboot: %v", err)
+	}
+	if err := sc.ShutdownDevice(context.Background(), addr.IP.String(), addr.Port); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestPostPowerAction_ForbiddenReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"power actions disabled"}`))
+	}))
+	defer srv.Close()
+
+	reg, _ := registry.Open(filepath.Join(t.TempDir(), "devices.json"))
+	sc := scanner.New(reg)
+	addr := srv.Listener.Addr().(*net.TCPAddr)
+	err := sc.RebootDevice(context.Background(), addr.IP.String(), addr.Port)
+	if err == nil || !strings.Contains(err.Error(), "power actions disabled") {
+		t.Fatalf("want disabled error, got %v", err)
+	}
+}
+
+func TestPostPowerAction_500ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"oops"}`))
+	}))
+	defer srv.Close()
+
+	reg, _ := registry.Open(filepath.Join(t.TempDir(), "devices.json"))
+	sc := scanner.New(reg)
+	addr := srv.Listener.Addr().(*net.TCPAddr)
+	err := sc.ShutdownDevice(context.Background(), addr.IP.String(), addr.Port)
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if strings.Contains(err.Error(), "power actions disabled") {
+		t.Fatalf("500 must NOT be reported as disabled: %v", err)
+	}
+}
+
+func TestPostPowerAction_TimeoutReturnsSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block past the client timeout; HTTPClient default is 3s,
+		// but we set the HTTP client below to a shorter one.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	}))
+	defer srv.Close()
+
+	reg, _ := registry.Open(filepath.Join(t.TempDir(), "devices.json"))
+	sc := scanner.New(reg, scanner.WithHTTPClient(&http.Client{Timeout: 100 * time.Millisecond}))
+	addr := srv.Listener.Addr().(*net.TCPAddr)
+	err := sc.RebootDevice(context.Background(), addr.IP.String(), addr.Port)
+	if !errors.Is(err, scanner.ErrPowerActionTimeout) {
+		t.Fatalf("want ErrPowerActionTimeout, got %v", err)
 	}
 }
