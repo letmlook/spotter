@@ -128,6 +128,34 @@ A nil / missing `jetson` field signals the agent is not on a Jetson
 board. Don't pattern-match the field name to decide; pattern-match
 its presence.
 
+## `GET /api/v1/logs?tail=N`
+
+Streams the device's execution log (default `journalctl -u spotterd.service`).
+
+Request:
+- Headers: `Accept: application/x-ndjson` (informational; agent does not enforce).
+- Query: `tail=N` (default 100, max 1000).
+
+Response (200, NDJSON stream):
+- One JSON object per line: journalctl `--output=json` raw record (including `__REALTIME_TIMESTAMP`, `MESSAGE`, `__CURSOR`, etc.).
+- Behaviour: replays the most recent N lines, then follows new output; the stream terminates when the client disconnects.
+
+Response (403, disabled):
+- Plain text `log streaming disabled` (when `enable_log_stream` is missing or false).
+
+Response (405, non-GET): plain text `method not allowed`.
+
+## `enable_log_stream` / `log_unit`
+
+`/etc/spotterd/agent.toml`:
+
+```toml
+enable_log_stream = true   # default false
+log_unit = "spotterd.service"  # default
+```
+
+When enabled, the agent exposes `GET /api/v1/logs`. Unauthenticated; deployer is responsible for network isolation. Log content may contain sensitive information; evaluate before enabling.
+
 ## `POST /api/v1/reboot`
 
 Requests the device to reboot. Only effective when `enable_power_actions = true` in the agent config.

@@ -54,6 +54,8 @@ agent_version    = "0.1.0"          # stamped by install.sh
 
 Optional: set `enable_power_actions = true` in `agent.toml` to enable GUI-driven remote power actions (off by default).
 
+Optional: set `enable_log_stream = true` in `agent.toml` to enable GUI live-log streaming (off by default; combine with `log_unit` to point at a different systemd unit).
+
 To change the listen port after install:
 
 ```bash

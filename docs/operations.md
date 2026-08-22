@@ -55,6 +55,8 @@ agent_version    = "0.1.0"          # 由 install.sh 写入
 
 可选：在 `agent.toml` 中设置 `enable_power_actions = true` 以启用 GUI 远程电源管理（默认关闭）。
 
+可选：在 `agent.toml` 中设置 `enable_log_stream = true` 以启用 GUI 实时日志查看（默认关闭；可配合 `log_unit` 字段指定其他 systemd unit）。
+
 修改监听端口：
 
 ```bash

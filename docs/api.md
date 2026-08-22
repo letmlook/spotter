@@ -126,6 +126,34 @@ client 的手动子网扫描用它过滤候选，然后再请求 `/api/v1/info`�
 `jetson` 字段为 nil / 缺失说明这台不是 Jetson。**判别时以字段是否出现
 为准，不要按字段名做模式匹配。**
 
+## `GET /api/v1/logs?tail=N`
+
+流式返回设备端软件的执行日志（默认 `journalctl -u spotterd.service`）。
+
+请求：
+- Headers：`Accept: application/x-ndjson`（文档化用，agent 不强制校验）。
+- Query：`tail=N`（默认 100，上限 1000）。
+
+响应（200，NDJSON 流）：
+- 每行一个 JSON 对象：journalctl `--output=json` 的原始结构（包括 `__REALTIME_TIMESTAMP`、`MESSAGE`、`__CURSOR` 等）。
+- 行为：先回放最近 N 行历史，再 follow 新增行；客户端断开后流终止。
+
+响应（403，未启用）：
+- 文本 `log streaming disabled`（agent 配置 `enable_log_stream` 缺失或为 false）。
+
+响应（405，非 GET）：文本 `method not allowed`。
+
+## `enable_log_stream` / `log_unit`
+
+`/etc/spotterd/agent.toml`：
+
+```toml
+enable_log_stream = true   # 默认 false
+log_unit = "spotterd.service"  # 默认
+```
+
+开启后 agent 暴露 `GET /api/v1/logs`。无身份认证，部署方负责网络隔离；日志内容可能含敏感信息，开启前评估数据敏感性。
+
 ## `POST /api/v1/reboot`
 
 请求设备重启。**仅在 agent 配置 `enable_power_actions = true` 时生效**。

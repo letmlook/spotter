@@ -176,9 +176,9 @@ GUI 客户端通过 UDP 组播（或手动子网扫描 / 按 IP 添加）发现�
 ## 已知限制（MVP）
 
 - 设备端仅支持运行 **systemd** 的 Linux（Ubuntu / Jetson / Debian / RHEL；`arm64` 与 `amd64` 均可）。
-- **不支持任意远端命令执行** —— 仅提供 opt-in 的远程 reboot / shutdown（需在 agent 端 `/etc/spotterd/agent.toml` 中设置 `enable_power_actions = true`）。不提供 shell 或自定义命令通道。
+- **不支持任意远端命令执行** —— 仅提供 opt-in 的远程 reboot / shutdown（见 power-actions 设计）与设备端软件执行日志查看（见 execution-log-stream 设计）。不提供 shell 或自定义命令通道。
 - UDP 组播仅限 **L2**（同 VLAN），除非路由器主动转发。
-- HTTP 端点 **无身份认证** —— 仍仅限可信局域网内部署；启用电源管理等于授予同网段任何客户端触发 root 级别 reboot / poweroff 的权限。
+- HTTP 端点 **无身份认证** —— 仍仅限可信局域网内部署；启用电源管理等于授予同网段任何客户端触发 root 级别 reboot / poweroff 的权限；启用日志流等于授予读取该 unit 在 systemd journal 中历史与新行的权限。
 
 ## 架构设计
 

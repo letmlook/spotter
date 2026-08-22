@@ -71,3 +71,9 @@ Spotter 为**可信 LAN** 设计。下列场景不在范围内，不视为安全
    VLAN / VPN 之后。
 6. `enable_power_actions = true` 等于授权该子网任何客户端触发 root 级
    别的 reboot / poweroff。
+7. 在启用 agent 的 `enable_log_stream = true` 前，确保设备在受控
+   VLAN / VPN 之后。
+8. `enable_log_stream = true` 等于授权该子网任何客户端读取 agent 的
+   systemd journal（仅限配置的 unit）。
+9. 该端点返回的日志可能包含敏感信息（路径、凭据片段等），开启前评估
+   数据敏感性。
