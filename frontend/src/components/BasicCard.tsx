@@ -31,7 +31,7 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
   ];
   return (
     <Card title={t('card.basic.title')} size="small">
-      <Descriptions column={1} size="small" colon={false} labelStyle={{ color: 'var(--text-secondary)', width: 130 }}>
+      <Descriptions column={2} size="small" colon={false} labelStyle={{ color: 'var(--text-secondary)', width: 110 }}>
         {items.map((it) => <Descriptions.Item key={it.key} label={it.label}>{it.children}</Descriptions.Item>)}
       </Descriptions>
     </Card>

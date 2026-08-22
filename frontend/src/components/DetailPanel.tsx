@@ -130,10 +130,12 @@ export default function DetailPanel() {
                 </Button>
               </Space>
             </div>
-            <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <BasicCard device={device} />
-              <NetworkCard device={device} />
               <JetsonCard device={device} />
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <NetworkCard device={device} />
             </div>
           </>
         )}
@@ -141,8 +143,9 @@ export default function DetailPanel() {
       {device && (
         <div
           style={{
-            padding: '0 16px 8px 16px',
-            borderTop: '1px solid var(--border-color)',
+            borderTop: '1px solid var(--border)',
+            padding: '12px 16px',
+            background: 'var(--bg-app)',
           }}
         >
           <LogSection deviceID={device.device_id} online={device.online} />
