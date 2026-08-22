@@ -41,9 +41,10 @@ jobs:
         run: npm ci --no-audit --fund=false
 
       - name: Type check (tsc --noEmit)
-        # `tsc -b` is what `npm run build` runs, but we only care about
-        # typecheck here — no JS emit, faster feedback.
-        run: npx tsc -b --noEmit
+        # `npm run typecheck` runs tsc in single-project (no references)
+        # mode, so the referenced `tsconfig.node.json` is free to set
+        # `composite: true` — which TS6310 forbids under `tsc -b`.
+        run: npm run typecheck
 
       - name: Production build
         run: npm run build

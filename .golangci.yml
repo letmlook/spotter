@@ -57,7 +57,7 @@ linters-settings:
         severity: warning
       - name: error-strings
         severity: warning
-      - name: error-returned
+      - name: error-return
         severity: warning
       - name: error-naming
         severity: warning

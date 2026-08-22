@@ -70,24 +70,56 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Client builds require Wails, which needs libgtk-3, libwebkit2gtk, etc.
-  # on the host. The Wails team publishes a container image with these
-  # pre-baked that we lean on directly.
+  # Client builds require Wails, which on Linux needs libgtk-3-dev,
+  # libwebkit2gtk-4.0-dev / 4.1-dev, and related system packages. There
+  # is no official `ghcr.io/wailsapp/wails` runtime container image; the
+  # Wails project only ships Dockerfile templates in `wailsapp/cc`, not
+  # prebuilt images. So we install the apt deps on a plain ubuntu runner
+  # and run the Wails CLI directly.
   client-linux:
     name: client (linux)
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/wailsapp/wails:v2.9.2
-      options: --privileged
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Build client with Wails
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails runtime deps (gtk3 + webkit2gtk-4.1)
+        # Wails v2.7+ recommends webkit2gtk-4.1 on Linux. ubuntu-latest
+        # runner image is 24.04 LTS, which ships 4.1 in the default
+        # apt repo. If we ever switch to a 22.04 runner we'll need to
+        # backport via the Wails docs:
+        # https://wails.io/docs/gettingstarted/installation#linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libxss-dev libsoup-3.0-dev pkg-config
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install npm deps
+        working-directory: frontend
+        run: npm ci --no-audit --fund=false
+
+      - name: Build spotter-client (linux/amd64) with Wails
         working-directory: ${{ github.workspace }}
         run: |
           wails build -clean -platform linux/amd64 -o spotter-client

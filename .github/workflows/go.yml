@@ -35,6 +35,22 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # main.go uses `//go:embed all:frontend/dist`. The CI image doesn't
+      # ship frontend/dist (it's in .gitignore), so we have to build the
+      # Vite project once before go vet / go test get a chance to walk
+      # the embed directive. Without this, `make test` errors out with
+      # "pattern all:frontend/dist: no matching files found".
+      - name: Build frontend so //go:embed frontend/dist resolves
+        working-directory: frontend
+        run: npm ci --no-audit --fund=false && npm run build
+
       - name: Verify module download integrity
         run: go mod download -x
 

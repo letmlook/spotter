@@ -23,10 +23,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Makefile targets are named `agent-linux-arm64` and
+          # `agent-linux-x64` — aligning the workflow matrix with those
+          # exact names so `make agent-${{ matrix.target }}` resolves.
           - target: linux-arm64
             goarch: arm64
             binary: bin/spotterd-linux-arm64
-          - target: linux-amd64
+          - target: linux-x64
             goarch: amd64
             binary: bin/spotterd-linux-x64
     steps:
