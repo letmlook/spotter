@@ -2,6 +2,12 @@
 # Keep this file thin — adding linters is cheap, but every new one slows CI
 # and increases noise. Re-enable after the codebase has been brought up
 # to the rule (a "make it green then enforce it" pattern).
+
+# Mandatory `version` field for golangci-lint v2 — without it the v2
+# binary rejects the file with "unsupported version of the
+# configuration" (v1 inferred ""  when reading legacy configs was
+# removed in v2).
+version: "2"
 run:
   # CI timeout must be smaller than golangci-lint-action's --timeout.
   timeout: 4m
