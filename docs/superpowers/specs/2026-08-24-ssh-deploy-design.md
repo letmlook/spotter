@@ -169,8 +169,15 @@ type File struct {
 
 | Source | 解析行为 | 失败语义 |
 |---|---|---|
-| `LocalSource` | `os.Stat` `<dataDir>/cache/bin/spotterd-linux-<arch>`、`spotterd.service`、`install.sh` 三件；任一缺失 → 报 `'spotterd-linux-<arch> not found in <cache/bin>'` | 直接报错，提示用户切到 remote 或手工 sync |
+| `LocalSource` | `os.Stat` `<dataDir>/cache/bin/spotterd-linux-<arch>`、`spotterd.service`、`install.sh` 三件；任一缺失 → 报错 `package_not_found` | 直接报错，提示用户切到 remote 或手工 sync |
 | `RemoteSource` | 用 `net/http.Get` 拉 `Settings.PackageReleaseURL`（模板按 arch 替换），落到 `<dataDir>/cache/bin/spotterd-linux-<arch>` | 网络错 / 404 直接报；下载完成后下一次调用 hit cache |
+
+**Arch 决定顺序**（`Package.Resolve` 内部分支）：
+1. `DeployRequest.Arch`（UI 在 dialog 里手填，备选）
+2. `Registry.Entry.LastInfo.Hardware.Arch`（如果 spotterd 已经把架构字段填到 `protocol.DeviceInfo`）
+3. 默认 `arm64`（最常见目标，Jetson 默认），并把决策回写到 Manifest.Origin 末尾作为 `(assumed=arm64)`，UI 显眼提示
+
+任何一步决定后 `LocalSource/RemoteSource` 按 arch 拼三件套的本地路径。
 
 > YAGNI：不实现 HTTP 下载进度条（GitHub release 几 MB，几秒）；不做 release 版本切换（用户改 URL）。
 
@@ -277,16 +284,26 @@ type App struct {
 func (a *App) PrepareDeploy(deviceID string) (deployer.PrepareResult, error)  // 返回 Manifest + handle
 func (a *App) CancelDeploy(handle string) error
 func (a *App) ListDeploys() []deployer.PrepareResult  // UI 重连时拉当前活跃 deploy
+func (a *App) SyncPackage(ctx context.Context) error  // UI 主动从 remote URL 拉包到 cache；SettingsDialog + DeployDialog 复用
 ```
 
-`RunDeploy` **不**显式作为 Wails bound 方法——它在 `PrepareDeploy` 后由 UI 端的 `RunDeploy(handle, AuthSpec, SudoPass)` 触发；为安全（密码不进入 binding 序列化），把 `Run` 改成从 React state 直接传 Wails 后端，实质是同一个 `App.RunDeploy` 但 `SudoPass` 走 `Inject` 而非序列化。下方案：
+**RunDeploy 拆分两个 method：出于安全（sudo 密码不进 binding 序列化），把「凭据提交」与「真正开跑」分成两个调用：**
 
 ```go
-// UI 把 SudoPass 写进 React state → 调 RunDeploySudo(handle, sudo_password)
-// 该方法把 sudo_password 立刻塞到 handle 的 chan 中，立刻退出；Deployer loop 从 chan 读
-func (a *App) ProvideSudoPassword(handle, password string) error  // 不落内存外；用完即丢
-func (a *App) RunDeploy(handle string) error                       // 真正开跑
+// ① UI 在 dialog 里准备凭据，点 Confirm → 立即调一次把 sudo 密码交给 Deployer
+//   Deployer 用一个 per-handle buffered chan (cap=1) 收下后立刻清空密码引用
+func (a *App) ProvideSudoPassword(handle string, password string) error
+//   - 校验 handle 存在且仍在 PENDING/READY 阶段
+//   - 把 password 写入 handle 的 chan（满则覆盖 = 取最新）
+//   - 不写入 App 的任何持久化字段，不进 slog
+
+// ② UI 调真正开跑（前面 ProvideSudoPassword 已写入）
+func (a *App) RunDeploy(handle string) error
+//   - 从 chan 取 sudo 密码（若无则 err `sudo_password_required`）
+//   - 后台 goroutine 跑 Deployer.Run，状态变更走 EventEmitter
 ```
+
+SSH 凭据（`AuthSpec`）**也不**进 Wails binding JSON 序列化——它由 UI 在 React state 保存，dispatch 通过 helper（`useDeviceActions().runDeploy({ handle, auth, sudoPass })`）一次性把三个字段都 throw 给 App 的私有方法（暴露为带前缀的 `Bound_*` helper，Wails 端不再单独 export）。这是约定而非强制——`AuthSpec` 的字段在 dialog 关闭即丢，不进 `Settings.json` 不进 `Registry.json`。
 
 **事件名（沿用现有 `{tag}:{deviceID|handle}` 范式）：**
 
@@ -319,10 +336,10 @@ interface Props {
    - 成功 → state 切换到「Ready」展示 Manifest 三行 + 设置面板
    - 失败 → antd `alert` 显示原因（包缺失 / SSH TCP 不通），按钮 disable 「Deploy」
 2. 用户在表单中调：
-   - PackageMode（本地 bin 镜像命中 / 远程 URL）的可视切换；remote 模式调 `RefreshFromRemote()`
-   - SSH AuthMode 三选一（agent / key file / password），各自动态显示对应字段
-   - User 默认值，来自 `device.lastInfo.username || device.username || 'spotter'`
-   - Sudo 密码（必填，独立字段）
+   - PackageMode（本地 bin 镜像命中 / 远程 URL）的可视切换；`Mode=="remote"` 时 UI 多一个「Refresh from remote」按钮，调 `App.SyncPackage(ctx)`（与 §3.6 SettingsDialog 复用同一方法），结果回写到 `cache/bin/` 再让 Source resolver 重新读
+   - SSH AuthMode 三选一（`agent` / `key` / `password`），各自动态显示对应字段；`Mode=="key"` 时显示文件选择与可选 passphrase，`Mode=="password"` 时显示密码字段
+   - User 默认值，来自 `device.lastInfo.username || registry.Entry.Username || 'spotter'`
+   - Sudo 密码（必填，独立字段——为空时 Deploy 按钮禁用）
 3. 表单内嵌一个 `<Progress>` 组件 + 「Phase: PREPARE / UPLOAD / INSTALL / DONE」 caption
 4. 订阅 Wails events `deploy-progress:{handle}`、`deploy-log:{handle}`、`deploy-complete:{handle}`、`deploy-canceled:{handle}`，把回调应用到 UI state
 5. Cancel 按钮：调用 `App.CancelDeploy(handle)`
