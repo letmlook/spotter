@@ -88,6 +88,11 @@ func collectJetsonFromRoot(root string) *protocol.JetsonInfo {
 // probeJetsonRelease runs `jetson_release -v` with a hermetic PATH so
 // that a root-scoped /usr/bin/jetson_release wins over the host's
 // without mutating the agent's process environment.
+//
+// The output format changed in jetpack-stats 7.x from a flat list of
+// "Key: Value" lines to grouped indented sections. Lines also contain
+// ANSI SGR colour codes; we strip those before parsing so a colour-
+// wrapped key still matches.
 func probeJetsonRelease(root string) (*protocol.JetsonInfo, error) {
 	// PATH separator is ':' on Linux. We prepend root-scoped bin dirs
 	// in front of the inherited PATH so the probe resolves a
@@ -110,36 +115,105 @@ func probeJetsonRelease(root string) (*protocol.JetsonInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	text := string(out)
-	if text == "" {
+	text := stripANSI(string(out))
+	if strings.TrimSpace(text) == "" {
 		return nil, exec.ErrNotFound
 	}
+	return parseJetsonRelease(text), nil
+}
+
+// ansiSeq matches a single ANSI SGR escape sequence (e.g. "\x1b[1m",
+// "\x1b[0m", "\x1b[92;101m").
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI SGR escape sequences from s.
+func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
+
+// modelJetpackRe extracts an embedded Jetpack label from a Model line.
+// Matches "Jetpack 7.2 GA", "Jetpack 5.1.3", "Jetpack 6.0 DP" etc.
+var modelJetpackRe = regexp.MustCompile(`Jetpack\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*(?:[ -](?:GA|EA|DP|RC|Production))?)`)
+
+// modelL4TRe extracts an L4T version from "[L4T 39.2.0]" inline.
+var modelL4TRe = regexp.MustCompile(`\[L4T\s+([0-9]+(?:\.[0-9]+){1,2})\]`)
+
+// indentedItemRe matches " - Key: Value" lines (jetpack-stats 7.x style).
+// Leading whitespace is tolerated.
+var indentedItemRe = regexp.MustCompile(`^\s*-\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.+?)\s*$`)
+
+// parseJetsonRelease parses the (ANSI-stripped) text of `jetson_release
+// -v`. Supports both the legacy flat "Key: Value" layout (jetpack-stats
+// <= 4.x) and the grouped indented layout (jetpack-stats 7.x). Always
+// returns a non-nil JetsonInfo; callers decide what an empty result
+// means in context.
+func parseJetsonRelease(text string) *protocol.JetsonInfo {
 	j := &protocol.JetsonInfo{}
-	for _, line := range strings.Split(text, "\n") {
-		kv := strings.SplitN(line, ":", 2)
-		if len(kv) != 2 {
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
 			continue
 		}
-		k := strings.TrimSpace(kv[0])
-		v := strings.TrimSpace(kv[1])
-		switch k {
-		case "Model":
-			j.Model = v
-		case "Jetpack":
-			j.Jetpack = v
-		case "L4T":
-			j.L4T = v
-		case "CUDA":
-			j.CUDA = v
-		case "cuDNN":
-			j.CUDNN = v
-		case "TensorRT":
-			j.TensorRT = v
-		case "Python":
-			j.Python = v
+		switch {
+		case strings.HasPrefix(line, "Model:"):
+			// First-line layout: "Model: <name> - Jetpack X [L4T Y]"
+			// Strip trailing annotations to keep the model name clean,
+			// and harvest the embedded Jetpack / L4T as a fallback when
+			// they aren't listed elsewhere in the report.
+			name := strings.TrimSpace(strings.TrimPrefix(line, "Model:"))
+			if i := strings.Index(name, " - "); i >= 0 {
+				name = strings.TrimSpace(name[:i])
+			}
+			if name != "" {
+				j.Model = name
+			}
+			if m := modelJetpackRe.FindStringSubmatch(line); len(m) >= 2 && j.Jetpack == "" {
+				j.Jetpack = strings.TrimSpace(m[1])
+			}
+			if m := modelL4TRe.FindStringSubmatch(line); len(m) >= 2 && j.L4T == "" {
+				j.L4T = strings.TrimSpace(m[1])
+			}
+		case strings.HasPrefix(line, "-"):
+			// Indented " - Key: Value" line from jetpack-stats 7.x.
+			// Indents may be tabs or spaces — the regex tolerates both.
+			m := indentedItemRe.FindStringSubmatch(line)
+			if len(m) != 3 {
+				continue
+			}
+			assignJetsonField(j, strings.TrimSpace(m[1]), strings.TrimSpace(m[2]))
+		default:
+			// Legacy flat "Key: Value" line, e.g. "Model: ...", "L4T: ...".
+			// Section headers like "Hardware:" / "Libraries:" have no
+			// value (SplitN returns len=1) and naturally fall through.
+			kv := strings.SplitN(line, ":", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			assignJetsonField(j, strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
 		}
 	}
-	return j, nil
+	return j
+}
+
+// assignJetsonField writes v into the matching JetsonInfo field for key.
+// Distinct-but-adjacent keys (e.g. "CUDA" vs "CUDA Arch BIN") are kept
+// separate by exact match — only the canonical names below trigger a
+// write.
+func assignJetsonField(j *protocol.JetsonInfo, key, value string) {
+	switch key {
+	case "Model":
+		j.Model = value
+	case "Jetpack":
+		j.Jetpack = value
+	case "L4T":
+		j.L4T = value
+	case "CUDA":
+		j.CUDA = value
+	case "cuDNN":
+		j.CUDNN = value
+	case "TensorRT":
+		j.TensorRT = value
+	case "Python":
+		j.Python = value
+	}
 }
 
 // overrideEnvPath returns a copy of env with PATH replaced by newPath.
