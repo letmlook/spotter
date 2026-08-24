@@ -72,8 +72,20 @@ func (a *Agent) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func (a *Agent) handleInfo(w http.ResponseWriter, _ *http.Request) {
-	info := a.Info()
+func (a *Agent) handleInfo(w http.ResponseWriter, r *http.Request) {
+	// Re-collect on every request so collected_at and uptime_seconds
+	// reflect the current snapshot. If a collector isn't installed
+	// (e.g. unit tests) we fall back to the cached snapshot. If the
+	// fresh collect fails we serve the last known good copy and log
+	// at Warn so the operator sees it without spamming Error.
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	info, err := a.refreshInfo(ctx)
+	if err != nil {
+		a.logger.Warn("info: live collect failed; serving cached snapshot",
+			slog.String("err", err.Error()))
+		info = a.Info()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		a.logger.Error("encode info", slog.String("err", err.Error()))

@@ -138,6 +138,10 @@ func main() {
 	info.DeviceID = cfg.DeviceID
 	info.AgentVersion = cfg.AgentVersion
 	agent.SetInfo(info)
+	// Live-recollect on every /api/v1/info so the GUI sees fresh
+	// collected_at and uptime_seconds after a manual refresh — the
+	// cached snapshot would otherwise stay pinned to startup time.
+	agent.SetCollector(c.Collect)
 	log.Info("agent ready",
 		slog.String("device_id", cfg.DeviceID),
 		slog.String("listen", cfg.ListenAddr),

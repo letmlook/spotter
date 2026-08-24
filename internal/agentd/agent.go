@@ -69,6 +69,12 @@ type Agent struct {
 	mu     sync.RWMutex
 	info   protocol.DeviceInfo
 
+	// collect re-collects DeviceInfo on demand. When set, every
+	// /api/v1/info request runs a fresh collect so collected_at and
+	// uptime_seconds track wall-clock between polls. Optional — when
+	// nil, the agent serves the cached snapshot.
+	collect func(ctx context.Context) (protocol.DeviceInfo, error)
+
 	// limiter is the optional per-IP rate-limit bucket for power
 	// actions / log streams. Allocated lazily inside Handler().
 	limiter  *ipLimiter
@@ -123,11 +129,39 @@ func (a *Agent) SetInfo(info protocol.DeviceInfo) {
 	a.info = info
 }
 
+// SetCollector installs a function that re-collects DeviceInfo on every
+// /api/v1/info request. nil disables on-demand collection and the
+// handler falls back to the cached snapshot. Call before the HTTP server
+// starts accepting requests.
+func (a *Agent) SetCollector(fn func(ctx context.Context) (protocol.DeviceInfo, error)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.collect = fn
+}
+
 // Info returns the cached DeviceInfo.
 func (a *Agent) Info() protocol.DeviceInfo {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.info
+}
+
+// refreshInfo runs the installed collector (if any) and replaces the
+// cached snapshot. Returns the new info on success. When no collector
+// is installed, returns the cached snapshot unchanged.
+func (a *Agent) refreshInfo(ctx context.Context) (protocol.DeviceInfo, error) {
+	a.mu.RLock()
+	collect := a.collect
+	a.mu.RUnlock()
+	if collect == nil {
+		return a.Info(), nil
+	}
+	info, err := collect(ctx)
+	if err != nil {
+		return protocol.DeviceInfo{}, err
+	}
+	a.SetInfo(info)
+	return info, nil
 }
 
 type missingFieldError struct{ field string }
