@@ -1,51 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import type { ReactNode } from 'react';
 import { ListDevices } from '../../wailsjs/go/main/App';
+import { protocol, registry } from '../../wailsjs/go/models';
 
-export interface DeviceInfo {
-  schema_version?: number;
-  device_id?: string;
-  collected_at?: string;
-  agent_version?: string;
-  basic?: {
-    hostname?: string;
-    username?: string;
-    os?: { pretty_name?: string; id?: string; version_id?: string };
-    kernel?: string;
-    arch?: string;
-    uptime_seconds?: number;
-  };
-  network?: {
-    primary_ip?: string;
-    interfaces?: Array<{
-      name?: string;
-      mac?: string;
-      addrs?: string[];
-    }>;
-  };
-  jetson?: {
-    model?: string;
-    jetpack?: string;
-    l4t?: string;
-    cuda?: string;
-    cudnn?: string;
-    tensorrt?: string;
-    python?: string;
-    serial?: string;
-  } | null;
-}
-
-export interface RegistryEntry {
-  device_id: string;
-  ip: string;
-  port: number;
-  username: string;
-  deployed_at?: string;
-  last_seen_at?: string;
-  last_source?: string;
-  online: boolean;
-  last_info?: DeviceInfo;
-}
+// DeviceInfo and RegistryEntry live in the Wails-generated
+// models.ts so the TS shape can never drift from the Go structs
+// in internal/protocol and internal/registry. Previously the
+// frontend hand-typed both — every time a new field landed in
+// `protocol.DeviceInfo` (e.g. Metrics in v0.5) the frontend
+// silently rendered no data for it.
+export type DeviceInfo = protocol.DeviceInfo;
+export type RegistryEntry = registry.Entry;
 
 interface DeviceState {
   devices: RegistryEntry[];
