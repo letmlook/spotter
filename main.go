@@ -266,10 +266,19 @@ func (a *App) onScannerEvent(e scanner.Event) {
 }
 
 // forwardToFrontend emits the event onto the Wails event bus so
-// the TS subscriber can react. See frontend/src/hooks/useWailsEvents.ts
+// the TS subscriber can react. See frontend/src/hooks/wailsEvents.ts
 // for the variadic-args contract — TS unwraps args[0].
 func (a *App) forwardToFrontend(e scanner.Event) {
 	a.emitter.Emit(a.ctx, e.Tag(), e)
+}
+
+// emitPayload is a typed convenience over Emitter.Emit so the
+// call site reads as "emit exactly this struct as the event
+// payload" instead of "pass it as the third variadic arg".
+// The single-payload contract is what makes
+// frontend/src/hooks/wailsEvents.ts:subscribe<T>() work.
+func emitPayload[T any](a *App, name string, payload T) {
+	a.emitter.Emit(a.ctx, name, payload)
 }
 
 // onDeviceIPDrifted re-anchors a registered device whose IP
