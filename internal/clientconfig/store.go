@@ -13,13 +13,17 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/spotter/spotter/internal/protocol"
 )
 
-// Defaults. Mirrored from internal/scanner.Options.withDefaults —
-// keep the two in sync; the spec-check script verifies.
+// Defaults. Multicast group + device port are re-exported from
+// internal/protocol so the client's settings file (which uses the
+// names DefaultMulticastGroup / DefaultDevicePort) does not need
+// to import scanner.
 const (
-	DefaultMulticastGroup = "239.255.42.42:9999"
-	DefaultDevicePort     = 9999
+	DefaultMulticastGroup = protocol.DefaultMulticastAddr
+	DefaultDevicePort     = protocol.DefaultDevicePort
 	DefaultScanTimeout    = 30 * time.Second
 	DefaultHTTPTimeout    = 3 * time.Second
 	DefaultMcastInterval  = 5 * time.Second

@@ -13,17 +13,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spotter/spotter/internal/clientconfig"
+	"github.com/spotter/spotter/internal/lanscan"
 	"github.com/spotter/spotter/internal/registry"
 	"github.com/spotter/spotter/internal/scanner"
 )
@@ -163,7 +161,7 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 	target := *cidr
 	if target == "" {
-		subs := mainpkgLocalSubnets()
+		subs := lanscan.LocalSubnets()
 		if len(subs) > 0 {
 			target = subs[0]
 		}
@@ -203,58 +201,6 @@ func cmdInfo(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// mainpkgLocalSubnets re-implements main.go's LocalSubnets inline
-// so the CLI binary doesn't depend on package main.
-func mainpkgLocalSubnets() []string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	var cidrs []string
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			ipnet, ok := addr.(*net.IPNet)
-			if !ok || ipnet.IP.To4() == nil {
-				continue
-			}
-			ip := ipnet.IP.To4()
-			if ip[0] == 169 && ip[1] == 254 {
-				continue
-			}
-			ones, _ := ipnet.Mask.Size()
-			cidrs = append(cidrs, fmt.Sprintf("%s/%d", ip.Mask(ipnet.Mask), ones))
-		}
-	}
-	sort.SliceStable(cidrs, func(i, j int) bool { return rfc1918Rank(cidrs[i]) < rfc1918Rank(cidrs[j]) })
-	return cidrs
-}
-
-func rfc1918Rank(cidr string) int {
-	ip := net.ParseIP(cidr[:strings.IndexByte(cidr, '/')])
-	if ip == nil {
-		return 1
-	}
-	// net.ParseIP returns IPv4 addresses in 16-byte form (mapped);
-	// the IPv4 bytes live at indices [12..15]. Take To4 so we
-	// always inspect the right slot regardless of input form.
-	v4 := ip.To4()
-	if v4 == nil {
-		return 1
-	}
-	switch {
-	case v4[0] == 10:
-		return 0
-	case v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31:
-		return 0
-	case v4[0] == 192 && v4[1] == 168:
-		return 0
-	}
-	return 1
-}
+// mainpkgLocalSubnets and rfc1918Rank were deleted when this binary
+// started importing internal/lanscan (see internal/lanscan/lanscan.go
+// for the single canonical implementation).

@@ -23,7 +23,9 @@ client 通过三条独立通道发现设备，结果统一写入 `internal/regis
 | UDP 组播 | `internal/scanner/mcast.go` | 60s | 监听 `239.255.42.42:9999` 上的 HELLO/HELLO-REPLY |
 | 手动子网扫描 | `internal/scanner/subnet.go` | 用户触发 | 自动探测本机 RFC1918 子网，逐 IP TCP 探活 + `/healthz` + `/api/v1/info` |
 
-融合逻辑集中在 `internal/scanner/merge.go` 的 `mergeInfo`——已注册则更新 `LastInfo / LastSeenAt / Online`，未注册则发出 `EventUnknownDeviceDiscovered`（GUI 可选择「接受」将其加入注册表）。连续失败 3 次的设备在 `pollFailures` 中被标记 offline（`EventOffline`）。
+融合逻辑集中在 `internal/scanner/merge.go` 的 `mergeInfo`——已注册则更新 `LastInfo / LastSeenAt / Online`，未注册则发出 `EventUnknownDeviceDiscovered`，**由 `main.go` 的 OnEvent 回调直接写入注册表（服务端 auto-accept）**。连续失败 3 次的设备在 `pollFailures` 中被标记 offline（`EventOffline`）。
+
+> **设计决策：auto-accept（v0.5 起的现行行为）**。早期版本曾规划「GUI 可选择接受」；目前 Wails EventsOn hook 的 variadic-args 形状在不同 wails 版本间不稳定，且手动 accept 会显著拖累扫描回路的吞吐，故改为服务端静默添加并立即 emit `info-updated`，让 UI reducer 在一次往返内拿到新行。`AcceptUnknownDevice` 绑定仍保留以支持主动用 `ProbeByIP` 后的显式接受。
 
 前端 ↔ Go 边界在 `main.go` 的 `App` 结构体上——所有方法通过 Wails `Bind` 暴露给 JS 侧，事件通过 `wailsruntime.EventsEmit` 推送。`OnStartup` 注入真实 ctx 后才启动 scanner loop；`App.ctx` 用 `context.Background()` 占位以保证 Wails 启动前的早期事件不 panic。
 
@@ -34,9 +36,15 @@ client 通过三条独立通道发现设备，结果统一写入 `internal/regis
 | `cmd/agent/` | agent | `spotterd` 入口，`//go:build linux` |
 | `internal/agentd/` | agent | HTTP server、UDP 广播循环、生命周期 |
 | `internal/collector/` | agent | `basic_linux.go` / `jetson_linux.go` / `network_linux.go`，**全部带 build tag**，仅 Linux |
-| `internal/protocol/` | 双端共享 | `DeviceInfo`（`/api/v1/info` 响应）+ UDP 包结构（`udp.go`）+ `schema_version.go` |
+| `internal/protocol/` | 双端共享 | `DeviceInfo`（`/api/v1/info` 响应）+ UDP 包结构（`udp.go`）+ `schema_version.go` + wire 常量（`DefaultListenAddr` / `DefaultMulticastAddr` / `DefaultDevicePort`）|
 | `internal/registry/` | client | 本地 JSON 设备注册表（`<UserConfig>/Spotter/devices.json`），线程安全 |
 | `internal/scanner/` | client | 三源融合；`merge.go` 是唯一写入 registry 的入口 |
+| `internal/lanscan/` | 双端共享 | `LocalSubnets` + `RFC1918Rank`；被 GUI（main.go）和 CLI（spotter-cli）共享 |
+| `cmd/spotter-cli/` | client | 终端客户端：list / scan / show / log；复用 scanner + registry |
+| `cmd/spotter-server/` | server | registryd 入口（HTTP + WebSocket hub），跨平台编译（macOS / Windows / Linux）|
+| `internal/registryd/` | server | HTTP handler + WebSocket hub + JSON-on-disk store，与 client 的 `internal/registry` 同名但语义独立 |
+| `internal/clientconfig/` | client | 用户可调设置（multicast_group / device_port / auth_token / enable_mdns 等）持久化 |
+| `internal/mdns/` | 双端共享 | 设备 IP 漂移时通过 mDNS 重新发现地址 |
 
 `protocol` 是**两端唯一共享的包**，修改前请确认字段向后兼容（schema_version）。
 

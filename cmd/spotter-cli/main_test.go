@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spotter/spotter/internal/lanscan"
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 )
@@ -233,12 +234,12 @@ func TestRFC1918RankInline(t *testing.T) {
 		"8.8.8.0/24":     1,
 	}
 	for cidr, want := range cases {
-		if got := rfc1918Rank(cidr); got != want {
-			t.Errorf("rfc1918Rank(%q) = %d, want %d", cidr, got, want)
+		if got := lanscan.RFC1918Rank(cidr); got != want {
+			t.Errorf("lanscan.RFC1918Rank(%q) = %d, want %d", cidr, got, want)
 		}
 	}
 }
 
 func TestMainpkgLocalSubnets_NoPanic(t *testing.T) {
-	_ = mainpkgLocalSubnets()
+	_ = lanscan.LocalSubnets()
 }

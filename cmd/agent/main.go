@@ -23,11 +23,10 @@ import (
 	"github.com/spotter/spotter/internal/agentd"
 	"github.com/spotter/spotter/internal/collector"
 	"github.com/spotter/spotter/internal/mdns"
+	"github.com/spotter/spotter/internal/protocol"
 )
 
 const defaultAgentVersion = "0.1.0"
-const defaultListenAddr = "0.0.0.0:9999"
-const defaultMulticastGroup = "239.255.42.42:9999"
 
 type tomlConfig struct {
 	DeviceID           string        `toml:"device_id"`
@@ -81,10 +80,10 @@ func main() {
 		os.Exit(1)
 	}
 	if cfg.ListenAddr == "" {
-		cfg.ListenAddr = defaultListenAddr
+		cfg.ListenAddr = protocol.DefaultListenAddr
 	}
 	if cfg.MulticastGroup == "" {
-		cfg.MulticastGroup = defaultMulticastGroup
+		cfg.MulticastGroup = protocol.DefaultMulticastAddr
 	}
 	if cfg.AgentVersion == "" {
 		cfg.AgentVersion = defaultAgentVersion

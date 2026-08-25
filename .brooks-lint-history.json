@@ -1,0 +1,8 @@
+[{
+  "date": "2026-08-25",
+  "mode": "Full Sweep",
+  "score": 0,
+  "findings": { "critical": 6, "warning": 34, "suggestion": 26 },
+  "scope": "Full repo: cmd/ + internal/ + main.go + frontend/src/ (degraded to scan+recommend, no auto-fix applied)",
+  "notes": "Many findings are duplicates across dimensions (LocalSubnets copy-paste, port 9999 magic, RFC3339 helper, App auto-accept). After cross-dimension dedup the unique-theme count is ~30 critical+warning+suggestion. Naive 100−(6×15+34×5+26×1) floors at 0/100; unique-theme score also floors at 0/100."
+}]

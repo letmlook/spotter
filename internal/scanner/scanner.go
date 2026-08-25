@@ -133,10 +133,10 @@ func (o Options) withDefaults() Options {
 		o.Logger = slog.Default()
 	}
 	if o.MulticastGroup == "" {
-		o.MulticastGroup = "239.255.42.42:9999"
+		o.MulticastGroup = protocol.DefaultMulticastAddr
 	}
 	if o.DevicePort == 0 {
-		o.DevicePort = 9999
+		o.DevicePort = protocol.DefaultDevicePort
 	}
 	if o.ClientSenderID == "" {
 		o.ClientSenderID = "spotter-client"

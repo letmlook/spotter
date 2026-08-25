@@ -4,7 +4,10 @@
 // docs/superpowers/specs/2026-08-22-registry-server-design.md for
 // the protocol and roadmap.
 //
-//go:build linux
+// Build tag was previously `//go:build linux`, but the underlying
+// internal/registryd package uses only net/http, gorilla/websocket,
+// and the standard library — nothing platform-specific — so the
+// server now compiles on macOS and Windows too.
 
 package main
 
