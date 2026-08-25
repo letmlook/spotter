@@ -1,4 +1,4 @@
-package registryd
+package serverd
 
 import (
 	"bytes"

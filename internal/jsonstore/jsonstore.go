@@ -6,7 +6,7 @@
 //   3. os.WriteFile(path, data, perm)
 //
 // Four callers — internal/registry, internal/clientconfig,
-// internal/registryd, and the audit-log open path in
+// internal/serverd, and the audit-log open path in
 // internal/agentd — were each carrying a copy. The shared
 // helper preserves caller intent: marshal and write the value
 // passed in, with a chosen file mode. Map key ordering is left

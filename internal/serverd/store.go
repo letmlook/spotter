@@ -1,8 +1,8 @@
-// Package registryd is the spotter-server component: a small HTTP +
+// Package serverd is the spotter-server component: a small HTTP +
 // WebSocket hub that stores device registrations and heartbeats. In
 // v0.5 this is a PoC with a JSON-on-disk store; SQLite WAL is on
 // the roadmap once the protocol stabilises.
-package registryd
+package serverd
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ type Device struct {
 }
 
 // ErrNotFound indicates the device_id is unknown to the store.
-var ErrNotFound = errors.New("registryd: device not found")
+var ErrNotFound = errors.New("serverd: device not found")
 
 // Store is the persistence interface. The in-process mutex-guarded
 // JSON file is the v0.5 implementation; later versions may swap to

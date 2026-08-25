@@ -41,8 +41,8 @@ client 通过三条独立通道发现设备，结果统一写入 `internal/regis
 | `internal/scanner/` | client | 三源融合；`merge.go` 是唯一写入 registry 的入口 |
 | `internal/lanscan/` | 双端共享 | `LocalSubnets` + `RFC1918Rank`；被 GUI（main.go）和 CLI（spotter-cli）共享 |
 | `cmd/spotter-cli/` | client | 终端客户端：list / scan / show / log；复用 scanner + registry |
-| `cmd/spotter-server/` | server | registryd 入口（HTTP + WebSocket hub），跨平台编译（macOS / Windows / Linux）|
-| `internal/registryd/` | server | HTTP handler + WebSocket hub + JSON-on-disk store，与 client 的 `internal/registry` 同名但语义独立 |
+| `cmd/spotter-server/` | server | serverd 入口（HTTP + WebSocket hub），跨平台编译（macOS / Windows / Linux）|
+| `internal/serverd/` | server | HTTP handler + WebSocket hub + JSON-on-disk store，与 client 的 `internal/registry` 同名但语义独立 |
 | `internal/clientconfig/` | client | 用户可调设置（multicast_group / device_port / auth_token / enable_mdns 等）持久化 |
 | `internal/mdns/` | 双端共享 | 设备 IP 漂移时通过 mDNS 重新发现地址 |
 

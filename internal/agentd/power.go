@@ -1,6 +1,7 @@
 package agentd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -152,7 +153,7 @@ func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 		if req.DelayMinutes > 0 {
 			executeAt := time.Now().Add(time.Duration(req.DelayMinutes) * time.Minute)
 			resp.ExecuteAt = executeAt.UTC().Format(time.RFC3339)
-			go a.delayExec(req, r.RemoteAddr, executeAt)
+			go a.delayExec(r.Context(), req, r.RemoteAddr, executeAt)
 		} else {
 			if err := ExecSystemctl(req.Action); err != nil {
 				resp.Status = "error"
@@ -166,15 +167,23 @@ func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// delayExec sleeps until t, then runs ExecSystemctl. It honours
-// ctx cancellation via the agent's shutdown channel — best effort,
-// the process will exit if delayed past the deadline anyway.
-func (a *Agent) delayExec(req PowerRequest, remote string, at time.Time) {
+// delayExec sleeps until at, then runs ExecSystemctl. Honours ctx
+// cancellation — if the agent shuts down (or the request context
+// is cancelled) before the deadline, the goroutine exits without
+// invoking systemctl and without writing a delayed-executed audit
+// row.
+func (a *Agent) delayExec(ctx context.Context, req PowerRequest, remote string, at time.Time) {
 	d := time.Until(at)
 	if d <= 0 {
 		d = time.Second
 	}
-	time.Sleep(d)
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-t.C:
+	}
 	_ = ExecSystemctl(req.Action)
 	if a.audit != nil {
 		a.audit.Record(req.Action, false, req.RequestID, remote, "delayed-executed")

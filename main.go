@@ -272,10 +272,13 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	if s.AuthToken != "" {
 		opts = append(opts, scanner.WithAuthToken(s.AuthToken))
 	}
-	// mDNS browse enables runtime IP-drift handling. Disable by
-	// setting [client] enable_mdns=false in a future settings field;
-	// for v0.4 the default is on.
-	opts = append(opts, scanner.WithEnableMDNS())
+	// mDNS browse enables runtime IP-drift handling. Defaults to
+	// off; SettingsDialog surfaces a checkbox so operators on
+	// networks that block mDNS multicast can keep zeroconf
+	// traffic off the wire.
+	if s.EnableMDNS {
+		opts = append(opts, scanner.WithEnableMDNS())
+	}
 
 	tokenSet := "no"
 	if s.AuthToken != "" {
@@ -291,7 +294,30 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	app.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
 		return app.scanner.StreamDeviceLogs(ctx, ip, port, "", onLine)
 	}
+
+	// Subscribe to registry mutations so logStreams can clean up
+	// automatically when a device is removed — previously logStreams
+	// was a parallel mini-registry that could outlive the device
+	// entry until the goroutine's defer ran.
+	go app.watchRegistry(reg.Subscribe())
 	return app
+}
+
+// watchRegistry listens on the registry mutation channel and
+// cancels any active log stream whose device is removed.
+func (a *App) watchRegistry(ch <-chan registry.MutationEvent) {
+	for ev := range ch {
+		if ev.Op != registry.OpRemove {
+			continue
+		}
+		a.logStreamsMu.Lock()
+		cancel, ok := a.logStreams[ev.DeviceID]
+		if ok {
+			cancel()
+			delete(a.logStreams, ev.DeviceID)
+		}
+		a.logStreamsMu.Unlock()
+	}
 }
 
 // GetSettings returns the current user settings. The frontend uses this

@@ -5,7 +5,7 @@
 // the protocol and roadmap.
 //
 // Build tag was previously `//go:build linux`, but the underlying
-// internal/registryd package uses only net/http, gorilla/websocket,
+// internal/serverd package uses only net/http, gorilla/websocket,
 // and the standard library — nothing platform-specific — so the
 // server now compiles on macOS and Windows too.
 
@@ -22,7 +22,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spotter/spotter/internal/registryd"
+	"github.com/spotter/spotter/internal/serverd"
 )
 
 func main() {
@@ -46,15 +46,15 @@ func main() {
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	store, err := registryd.Open(filepath.Join(*data, "server.json"))
+	store, err := 	serverd.Open(filepath.Join(*data, "server.json"))
 	if err != nil {
 		log.Error("open store", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
-	hub := registryd.NewHub()
+	hub := 	serverd.NewHub()
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           registryd.NewHandler(store, hub),
+		Handler:           	serverd.NewHandler(store, hub),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

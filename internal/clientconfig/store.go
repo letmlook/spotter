@@ -45,6 +45,11 @@ type Settings struct {
 	// AuthToken is stored verbatim on disk; the UI is responsible
 	// for clearing it (e.g. on logout). Mode 0600, owner-only.
 	AuthToken string `json:"auth_token,omitempty"`
+	// EnableMDNS gates zeroconf announce/browse. Default false so
+	// networks that block mDNS multicast (corporate WANs, isolated
+	// segments) do not get unsolicited traffic. The UI exposes a
+	// checkbox so operators can opt in.
+	EnableMDNS bool `json:"enable_mdns,omitempty"`
 }
 
 // defaultSettings returns the zero-config Settings as if none had

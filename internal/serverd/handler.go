@@ -1,4 +1,4 @@
-package registryd
+package serverd
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/spotter/spotter/internal/protocol"
 )
 
 // Event is broadcast over the WebSocket hub when the device list
@@ -106,7 +108,7 @@ func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Port == 0 {
-		d.Port = 9999 // see protocol.DefaultDevicePort — aligned in registryd-mux-cleanup PR
+		d.Port = protocol.DefaultDevicePort
 	}
 	d.LastSource = "agent-registered"
 	if err := h.Store.Upsert(d); err != nil {
