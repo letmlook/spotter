@@ -146,18 +146,146 @@ func main() {
 // scanner, log-stream); the facade keeps the Wails Bind surface
 // flat so the frontend does not have to know about an internal
 // split. NewApp wires the dependencies once and the methods stay
-// narrow.
+// narrow. The eight narrowest methods (GetSettings / SetSettings /
+// ListDevices / ClearRegistry / LocalSubnets / RefreshNow /
+// StartLogStream / StopLogStream) are delegated to four
+// concern-scoped sub-structs; the six methods that need cross-
+// concern composition (StartScanner / ScanSubnet / ProbeByIP /
+// AcceptUnknownDevice / RebootDevice / ShutdownDevice) stay on
+// the facade body — refactoring those into the sub-structs
+// would require passing three or more dependencies through the
+// same call path for no clarity gain. See PR 5 / PR 8 for the
+// per-concern refactors (onScannerEvent dispatch + watchRegistry
+// for log-stream lifecycle + Scanner.Close) that already carve
+// the largest slices out of this struct.
 type App struct {
-	reg          *registry.Registry
-	settings      *clientconfig.Store
-	logger       *slog.Logger
-	scanner      *scanner.Scanner
-	emitter      Emitter
-	ctx          context.Context // injected via OnStartup; pre-initialised to a non-nil placeholder so EventsEmit is safe before Wails starts.
-	logStreams   map[string]context.CancelFunc
-	logStreamsMu sync.Mutex
+	settingsApp  *settingsApp
+	registryApp  *registryApp
+	scannerApp   *scannerApp
+	logStreamApp *logStreamApp
+
+	reg     *registry.Registry
+	settings *clientconfig.Store
+	logger  *slog.Logger
+	scanner *scanner.Scanner
+	emitter Emitter
+	ctx     context.Context // injected via OnStartup; pre-initialised to a non-nil placeholder so EventsEmit is safe before Wails starts.
+}
+
+// settingsApp owns the GetSettings / SetSettings surface. No
+// mutation outside the user dialog is exposed here.
+type settingsApp struct{ s *clientconfig.Store }
+
+func (s *settingsApp) Get() clientconfig.Settings { return s.s.Get() }
+func (s *settingsApp) Set(in clientconfig.Settings) error {
+	return s.s.Set(in)
+}
+
+// registryApp owns the device-registry CRUD surface: List +
+// Clear. (Power actions stay on the App facade because they need
+// the scanner for HTTP calls.)
+type registryApp struct {
+	reg    *registry.Registry
+	logger *slog.Logger
+}
+
+func (r *registryApp) List() []registry.Entry { return r.reg.List() }
+func (r *registryApp) Clear() (int, error) {
+	entries := r.reg.List()
+	for _, e := range entries {
+		if err := r.reg.Remove(e.DeviceID); err != nil {
+			return 0, fmt.Errorf("remove %s: %w", e.DeviceID, err)
+		}
+	}
+	r.logger.Info("registry cleared", slog.Int("count", len(entries)))
+	return len(entries), nil
+}
+
+// scannerApp owns the scan triggers + enumeration. RefreshNow +
+// LocalSubnets (no Scanner lifecycle dependency) live here.
+// StartScanner and ScanSubnet stay on the App facade because
+// they need the full emitter + ctx.
+type scannerApp struct {
+	scanner *scanner.Scanner
+	logger  *slog.Logger
+}
+
+func (s *scannerApp) LocalSubnets() []string {
+	subs := lanscan.LocalSubnets()
+	if subs == nil {
+		s.logger.Error("list interfaces")
+	}
+	return subs
+}
+
+func (s *scannerApp) RefreshNow(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	return s.scanner.PollOnce(ctx)
+}
+
+// logStreamApp owns the per-device log-stream goroutines.
+type logStreamApp struct {
+	scanner *scanner.Scanner
+	logger  *slog.Logger
+	emitter func(ctx context.Context, name string, data ...interface{})
+
+	mu      sync.Mutex
+	streams map[string]context.CancelFunc
 	// streamFn is the body of StartLogStream; injected for tests.
 	streamFn func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error
+}
+
+// start launches a single goroutine streaming deviceID's logs
+// and registers its cancel func. Idempotent for the same
+// deviceID.
+func (l *logStreamApp) start(deviceID, ip string, port int) {
+	l.mu.Lock()
+	if _, exists := l.streams[deviceID]; exists {
+		l.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	l.streams[deviceID] = cancel
+	l.mu.Unlock()
+	go l.run(ctx, deviceID, ip, port)
+}
+
+// stop cancels (if any) the active stream for deviceID.
+func (l *logStreamApp) stop(deviceID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if cancel, ok := l.streams[deviceID]; ok {
+		cancel()
+		delete(l.streams, deviceID)
+	}
+}
+
+// cancelOnRemove is the watcher callback — same as stop but
+// kept named for the call-site intent.
+func (l *logStreamApp) cancelOnRemove(deviceID string) { l.stop(deviceID) }
+
+// run reads from streamFn, emits each line, and on exit removes
+// the stream entry + emits "device-log-end:{id}".
+func (l *logStreamApp) run(ctx context.Context, deviceID, ip string, port int) {
+	defer func() {
+		l.mu.Lock()
+		if c, ok := l.streams[deviceID]; ok {
+			c()
+			delete(l.streams, deviceID)
+		}
+		l.mu.Unlock()
+		l.emitter(ctx, "device-log-end:"+deviceID, true)
+	}()
+	err := l.streamFn(ctx, ip, port, func(line scanner.LogLine) {
+		l.emitter(ctx, "device-log:"+deviceID, line)
+	})
+	if err != nil && !errors.Is(err, context.Canceled) {
+		l.logger.Warn("log stream ended",
+			slog.String("device_id", deviceID),
+			slog.String("err", err.Error()))
+		l.emitter(ctx, "device-log-error:"+deviceID, err.Error())
+	}
 }
 
 // OnStartup is called by Wails; replaces the placeholder ctx with the
@@ -185,8 +313,17 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	}
 	app := &App{
 		reg: reg, settings: settings, logger: logger, emitter: emitter,
-		ctx:        context.Background(),
-		logStreams: map[string]context.CancelFunc{},
+		ctx: context.Background(),
+		settingsApp: &settingsApp{s: settings},
+		registryApp: &registryApp{reg: reg, logger: logger},
+		scannerApp:  &scannerApp{scanner: nil, logger: logger}, // wired after scanner.New below
+		logStreamApp: &logStreamApp{
+			scanner:  nil, // wired after scanner.New below
+			logger:   logger,
+			emitter:  emitter.Emit,
+			streams:  map[string]context.CancelFunc{},
+			streamFn: nil, // wired after scanner.New below
+		},
 	}
 	s := settings.Get()
 	opts := []func(*scanner.Options){
@@ -215,15 +352,15 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 		slog.String("auth_token", tokenSet),
 	)
 	app.scanner = scanner.New(reg, opts...)
+	app.scannerApp.scanner = app.scanner
+	app.logStreamApp.scanner = app.scanner
 	// streamFn 默认指向 scanner 实现；测试可覆盖。
-	app.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
+	app.logStreamApp.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
 		return app.scanner.StreamDeviceLogs(ctx, ip, port, "", onLine)
 	}
 
 	// Subscribe to registry mutations so logStreams can clean up
-	// automatically when a device is removed — previously logStreams
-	// was a parallel mini-registry that could outlive the device
-	// entry until the goroutine's defer ran.
+	// automatically when a device is removed.
 	go app.watchRegistry(reg.Subscribe())
 	return app
 }
@@ -235,13 +372,7 @@ func (a *App) watchRegistry(ch <-chan registry.MutationEvent) {
 		if ev.Op != registry.OpRemove {
 			continue
 		}
-		a.logStreamsMu.Lock()
-		cancel, ok := a.logStreams[ev.DeviceID]
-		if ok {
-			cancel()
-			delete(a.logStreams, ev.DeviceID)
-		}
-		a.logStreamsMu.Unlock()
+		a.logStreamApp.cancelOnRemove(ev.DeviceID)
 	}
 }
 
@@ -359,19 +490,17 @@ func (a *App) onUnknownDevice(u scanner.EventUnknownDeviceDiscovered) {
 
 // GetSettings returns the current user settings. The frontend uses this
 // to pre-fill the Settings dialog.
-func (a *App) GetSettings() clientconfig.Settings {
-	return a.settings.Get()
-}
+func (a *App) GetSettings() clientconfig.Settings { return a.settingsApp.Get() }
 
 // SetSettings replaces settings and flushes to disk. Returns the new
 // settings on success so the UI can update its form-state in one trip.
 func (a *App) SetSettings(in clientconfig.Settings) (clientconfig.Settings, error) {
-	if err := a.settings.Set(in); err != nil {
+	if err := a.settingsApp.Set(in); err != nil {
 		return clientconfig.Settings{}, err
 	}
 	// Resync the scanner with the new values. The next poll/mcast
 	// tick picks them up, so we do NOT need to bounce the loop.
-	s := a.settings.Get()
+	s := a.settingsApp.Get()
 	a.logger.Info("settings applied",
 		slog.String("multicast", s.MulticastGroup),
 		slog.Int("port", s.DevicePort),
@@ -388,9 +517,7 @@ func (a *App) StartScanner(ctx context.Context) {
 }
 
 // ListDevices returns the registry snapshot for the UI.
-func (a *App) ListDevices() []registry.Entry {
-	return a.reg.List()
-}
+func (a *App) ListDevices() []registry.Entry { return a.registryApp.List() }
 
 // ScanSubnet triggers a manual subnet scan. If cidr is empty, the
 // first non-loopback IPv4 subnet is auto-detected from the host's
@@ -416,20 +543,10 @@ func (a *App) ScanSubnet(cidr string) error {
 // at index 0. Link-local 169.254/16 is filtered out. The GUI uses
 // this to pre-fill / auto-trigger subnet scans. Implementation
 // lives in internal/lanscan so the CLI binary shares the same code.
-func (a *App) LocalSubnets() []string {
-	subs := lanscan.LocalSubnets()
-	if subs == nil {
-		a.logger.Error("list interfaces")
-	}
-	return subs
-}
+func (a *App) LocalSubnets() []string { return a.scannerApp.LocalSubnets() }
 
 // RefreshNow forces an immediate poll cycle.
-func (a *App) RefreshNow() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return a.scanner.PollOnce(ctx)
-}
+func (a *App) RefreshNow() error { return a.scannerApp.RefreshNow(a.ctx) }
 
 // ProbeByIP fetches /api/v1/info from ip:port and, if the device is
 // not already registered, adds it to the registry. Returns the new
@@ -537,16 +654,7 @@ func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username
 
 // ClearRegistry removes every entry from the local registry. Returns
 // the number of entries removed.
-func (a *App) ClearRegistry() (int, error) {
-	entries := a.reg.List()
-	for _, e := range entries {
-		if err := a.reg.Remove(e.DeviceID); err != nil {
-			return 0, fmt.Errorf("remove %s: %w", e.DeviceID, err)
-		}
-	}
-	a.logger.Info("registry cleared", slog.Int("count", len(entries)))
-	return len(entries), nil
-}
+func (a *App) ClearRegistry() (int, error) { return a.registryApp.Clear() }
 
 // RebootDevice sends a remote reboot command to the device identified
 // by deviceID. Returns an error if the device is not in the registry
@@ -616,29 +724,14 @@ func (a *App) StartLogStream(deviceID string) error {
 	if port == 0 {
 		port = listenPort
 	}
-
-	a.logStreamsMu.Lock()
-	if _, exists := a.logStreams[deviceID]; exists {
-		a.logStreamsMu.Unlock()
-		return nil
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.logStreams[deviceID] = cancel
-	a.logStreamsMu.Unlock()
-
-	go a.runLogStream(ctx, deviceID, entry.IP, port)
+	a.logStreamApp.start(deviceID, entry.IP, port)
 	return nil
 }
 
 // StopLogStream cancels the active log stream for deviceID. Returns
 // nil even if no stream is active.
 func (a *App) StopLogStream(deviceID string) error {
-	a.logStreamsMu.Lock()
-	defer a.logStreamsMu.Unlock()
-	if cancel, ok := a.logStreams[deviceID]; ok {
-		cancel()
-		delete(a.logStreams, deviceID)
-	}
+	a.logStreamApp.stop(deviceID)
 	return nil
 }
 
@@ -646,22 +739,5 @@ func (a *App) StopLogStream(deviceID string) error {
 // Emitter. On exit (ctx cancel or stream error) it removes the
 // stream from the map and emits "device-log-end:{id}".
 func (a *App) runLogStream(ctx context.Context, deviceID, ip string, port int) {
-	defer func() {
-		a.logStreamsMu.Lock()
-		if c, ok := a.logStreams[deviceID]; ok {
-			c()
-			delete(a.logStreams, deviceID)
-		}
-		a.logStreamsMu.Unlock()
-		a.emitter.Emit(a.ctx, "device-log-end:"+deviceID, true)
-	}()
-	err := a.streamFn(ctx, ip, port, func(line scanner.LogLine) {
-		a.emitter.Emit(a.ctx, "device-log:"+deviceID, line)
-	})
-	if err != nil && !errors.Is(err, context.Canceled) {
-		a.logger.Warn("log stream ended",
-			slog.String("device_id", deviceID),
-			slog.String("err", err.Error()))
-		a.emitter.Emit(a.ctx, "device-log-error:"+deviceID, err.Error())
-	}
+	a.logStreamApp.run(ctx, deviceID, ip, port)
 }

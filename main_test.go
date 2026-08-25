@@ -50,7 +50,7 @@ func newTestApp(t *testing.T, reg *registry.Registry, em Emitter) *App {
 	}
 	a := NewApp(reg, settings, slog.New(slog.NewTextHandler(io.Discard, nil)), em)
 	// 替换 streamFn 为同步 fake
-	a.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
+	a.logStreamApp.streamFn = func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error {
 		// 默认 fake：emit 3 行后返回 nil
 		for i := 0; i < 3; i++ {
 			select {
@@ -128,7 +128,7 @@ func TestStartLogStream_Idempotent(t *testing.T) {
 	a := newTestApp(t, reg, em)
 	// 把 streamFn 换成挂起型，确保 goroutine 不退出。
 	blockCh := make(chan struct{})
-	a.streamFn = func(ctx context.Context, _ string, _ int, _ func(scanner.LogLine)) error {
+	a.logStreamApp.streamFn = func(ctx context.Context, _ string, _ int, _ func(scanner.LogLine)) error {
 		<-blockCh
 		return nil
 	}
@@ -175,7 +175,7 @@ func TestRunLogStream_ErrorPropagates(t *testing.T) {
 	em := &fakeEmitter{}
 	a := newTestApp(t, reg, em)
 	// 改 streamFn 返回非 ctx.Canceled error
-	a.streamFn = func(_ context.Context, _ string, _ int, _ func(scanner.LogLine)) error {
+	a.logStreamApp.streamFn = func(_ context.Context, _ string, _ int, _ func(scanner.LogLine)) error {
 		return errors.New("boom")
 	}
 
