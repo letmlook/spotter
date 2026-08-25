@@ -91,6 +91,11 @@ func (a *Agent) handleInfo(w http.ResponseWriter, r *http.Request) {
 		a.logger.Warn("info: live collect failed; serving cached snapshot",
 			slog.String("err", err.Error()))
 		info = a.Info()
+		// X-Spotter-Stale: true tells the GUI / client to render
+		// this row's "CollectedAt" with a visible staleness
+		// indicator so operators can tell a fresh collect from
+		// the cached copy after a partial failure.
+		w.Header().Set("X-Spotter-Stale", "true")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(info); err != nil {

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/spotter/spotter/internal/mdns"
@@ -117,18 +118,18 @@ func (o Options) withDefaults() Options {
 		o.LogHTTPClient = &http.Client{Timeout: 0} // 跟随 ctx
 	}
 	if o.PollInterval == 0 {
-		// Short cadence so device online/offline transitions surface in
-		// the GUI within ~one interval. The agent also emits HELLO every
-		// 5s (see internal/agentd/udp.go), so the worst-case online
-		// latency is bounded by this value; offline latency is bounded
-		// by PollInterval * pollFailures.threshold (currently 3).
-		o.PollInterval = 5 * time.Second
+		// Cadence so device online/offline transitions surface in
+		// the GUI within ~one interval. The agent also emits HELLO
+		// every McastInterval, so worst-case online latency is
+		// bounded by this value; offline latency is bounded by
+		// PollInterval * pollFailures.threshold (currently 3).
+		o.PollInterval = protocol.DefaultPollInterval
 	}
 	if o.McastInterval == 0 {
-		// Matches the agent's proactive HELLO cadence. The mcast loop
-		// both sends a HELLO (to elicit HELLO_REPLY from agents) and
-		// passively listens for agent HELLOs.
-		o.McastInterval = 5 * time.Second
+		// Matches the agent's proactive HELLO cadence. The mcast
+		// loop both sends a HELLO (to elicit HELLO_REPLY from
+		// agents) and passively listens for agent HELLOs.
+		o.McastInterval = protocol.DefaultMcastInterval
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
@@ -177,6 +178,8 @@ type Scanner struct {
 	reg       *registry.Registry
 	opts      Options
 	failTrack *pollFailures
+	stop      chan struct{} // closed by Close to terminate watchRegistry
+	stopOnce  sync.Once
 }
 
 // New creates a Scanner and starts a goroutine that mirrors registry
@@ -190,21 +193,41 @@ func New(reg *registry.Registry, optFns ...func(*Options)) *Scanner {
 	for _, fn := range optFns {
 		fn(&opts)
 	}
-	s := &Scanner{reg: reg, opts: opts, failTrack: newPollFailures(3)}
+	s := &Scanner{
+		reg:       reg,
+		opts:      opts,
+		failTrack: newPollFailures(3),
+		stop:      make(chan struct{}),
+	}
 	go s.watchRegistry(reg.Subscribe())
 	return s
 }
 
+// Close terminates the registry-watcher goroutine. Idempotent.
+// Safe to call multiple times. The Scanner cannot be re-started
+// after Close — create a new one if needed.
+func (s *Scanner) Close() {
+	s.stopOnce.Do(func() { close(s.stop) })
+}
+
 // watchRegistry consumes MutationEvents from ch and resets
-// pollFailures counts for removed devices. Runs for the lifetime of
-// the Scanner.
+// pollFailures counts for removed devices. Exits when ch is
+// closed (registry.Close) OR when s.stop is closed (Scanner.Close).
 func (s *Scanner) watchRegistry(ch <-chan registry.MutationEvent) {
-	for ev := range ch {
-		switch ev.Op {
-		case registry.OpRemove:
-			s.failTrack.reset(ev.DeviceID)
-			s.opts.Logger.Debug("scan: registry cleared device, reset fail count",
-				slog.String("device", ev.DeviceID))
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			switch ev.Op {
+			case registry.OpRemove:
+				s.failTrack.reset(ev.DeviceID)
+				s.opts.Logger.Debug("scan: registry cleared device, reset fail count",
+					slog.String("device", ev.DeviceID))
+			}
+		case <-s.stop:
+			return
 		}
 	}
 }

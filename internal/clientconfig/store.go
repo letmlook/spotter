@@ -17,17 +17,19 @@ import (
 	"github.com/spotter/spotter/internal/protocol"
 )
 
-// Defaults. Multicast group + device port + log unit are
-// re-exported from internal/protocol so the client's settings file
-// (which uses the names DefaultMulticastGroup / DefaultDevicePort
-// / DefaultLogUnit) does not need to import scanner.
+// Defaults. Multicast group + device port + log unit + scanner
+// intervals are re-exported from internal/protocol so the
+// client's settings file (which uses the names
+// DefaultMulticastGroup / DefaultDevicePort / DefaultLogUnit /
+// DefaultPollInterval / DefaultMcastInterval) does not need to
+// import scanner.
 const (
 	DefaultMulticastGroup = protocol.DefaultMulticastAddr
 	DefaultDevicePort     = protocol.DefaultDevicePort
-	DefaultScanTimeout    = 30 * time.Second
-	DefaultHTTPTimeout    = 3 * time.Second
-	DefaultMcastInterval  = 5 * time.Second
-	DefaultPollInterval   = 5 * time.Second
+	DefaultScanTimeout    = protocol.DefaultScanTimeout
+	DefaultHTTPTimeout    = protocol.DefaultHTTPTimeout
+	DefaultMcastInterval  = protocol.DefaultMcastInterval
+	DefaultPollInterval   = protocol.DefaultPollInterval
 	DefaultLogUnit        = protocol.DefaultLogUnit
 )
 

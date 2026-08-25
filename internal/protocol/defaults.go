@@ -1,5 +1,8 @@
 package protocol
 
+import "time"
+
+
 // Wire defaults shared by every binary. Both the agent
 // (cmd/agent) and the client (main.go) listen on DefaultListenAddr
 // and announce / poll DefaultMulticastAddr on UDP. Keep the two
@@ -29,4 +32,19 @@ const (
 	// hard-coded "spotterd.service" inline — keep the two
 	// agreeing via this constant.
 	DefaultLogUnit = "spotterd.service"
+)
+
+// Scanner-side defaults shared between internal/clientconfig
+// (settings.json on disk) and internal/scanner (Options.withDefaults
+// at runtime). Previously the two carried separate copies of the
+// same numbers — see clientconfig.defaultSettings and
+// scanner.Options.withDefaults — that drifted (e.g. one copy
+// kept 5s PollInterval when the other moved to 30s). Both now
+// reference these constants so an operator's settings.json and
+// the in-memory scanner.Options agree by construction.
+const (
+	DefaultPollInterval  = 30 * time.Second
+	DefaultMcastInterval  = 60 * time.Second
+	DefaultScanTimeout    = 30 * time.Second
+	DefaultHTTPTimeout    = 3 * time.Second
 )

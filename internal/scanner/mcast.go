@@ -76,11 +76,11 @@ func writeHello(conn *net.UDPConn, addr *net.UDPAddr, senderID string) bool {
 	}
 	data, err := json.Marshal(hello)
 	if err != nil {
-		slog.Default().Debug("mcast marshal hello", "err", err.Error())
+		slog.Default().Debug("mcast marshal hello", slog.String("err", err.Error()))
 		return false
 	}
 	if _, err := conn.WriteToUDP(data, addr); err != nil {
-		slog.Default().Debug("mcast write", "err", err.Error())
+		slog.Default().Debug("mcast write", slog.String("err", err.Error()))
 		return false
 	}
 	return true

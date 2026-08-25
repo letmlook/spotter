@@ -165,6 +165,13 @@ type App struct {
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
 	a.scanner.Start(ctx)
+	// Close the scanner's registry-watcher when Wails shuts the
+	// ctx down. Without this the goroutine outlives the App and
+	// only exits when the registry itself is closed.
+	go func() {
+		<-ctx.Done()
+		a.scanner.Close()
+	}()
 }
 
 // NewApp constructs the App, scanner, and event wiring. Scanner
@@ -183,91 +190,7 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	}
 	s := settings.Get()
 	opts := []func(*scanner.Options){
-		scanner.WithOnEvent(func(e scanner.Event) {
-			logger.Info("scanner event", slog.String("tag", e.Tag()))
-			// Emit on Wails event bus. The emitter is variadic on the
-			// Go side (Emits ...interface{}) and Wails wraps each
-			// element into a JS array — the TS subscriber must
-			// unwrap args[0] to get the payload (see
-			// frontend/src/hooks/useWailsEvents.ts).
-			switch ev := e.(type) {
-			case scanner.EventDeviceIPDrifted:
-				if ev.NewIP == "" {
-					return
-				}
-				err := app.reg.Update(ev.DeviceID, func(en *registry.Entry) {
-					if ev.NewIP != "" {
-						en.IP = ev.NewIP
-					}
-					if ev.NewPort > 0 {
-						en.Port = ev.NewPort
-					}
-					en.LastSource = "mdns"
-				})
-				if err != nil {
-					logger.Warn("mdns drift: registry update failed",
-						slog.String("device", ev.DeviceID),
-						slog.String("err", err.Error()))
-					return
-				}
-				fresh, _ := app.reg.Get(ev.DeviceID)
-				logger.Info("mdns drift re-anchored",
-					slog.String("device", ev.DeviceID),
-					slog.String("from", ev.OldIP),
-					slog.String("to", ev.NewIP))
-				app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
-				return
-			}
-			// Server-side auto-accept for unknown devices. The JS
-			// EventsOn hook is brittle (variadic-args shape across
-			// wails versions), so we make the runtime-independent
-			// path: upsert here and emit info-updated so the UI's
-			// reducer sees a fresh row.
-			if u, ok := e.(scanner.EventUnknownDeviceDiscovered); ok {
-				id := u.Info.DeviceID
-				if id != "" {
-					ip := u.IP
-					if ip == "" && u.Info.Network.PrimaryIP != "" {
-						ip = u.Info.Network.PrimaryIP
-					}
-					port := u.Port
-					if port == 0 {
-						port = listenPort
-					}
-					entry := registry.Entry{
-						DeviceID:   id,
-						IP:         ip,
-						Port:       port,
-						Username:   "",
-						DeployedAt: timefmt.NowUTC(),
-						LastSource: "accept",
-						Online:     true,
-					}
-					created, err := app.reg.Upsert(id, entry, func(en *registry.Entry) {
-						en.IP = ip
-						en.Port = port
-						en.LastSource = "accept"
-						en.Online = true
-					})
-					if err != nil {
-						logger.Warn("auto-accept: registry upsert failed",
-							slog.String("device", id),
-							slog.String("err", err.Error()))
-					} else if created {
-						logger.Info("auto-accepted new device",
-							slog.String("device", id),
-							slog.String("ip", ip))
-					}
-					if created || err == nil {
-						fresh, _ := app.reg.Get(id)
-						app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
-					}
-				}
-				app.emitter.Emit(app.ctx, e.Tag(), e)
-				return
-			}
-			app.emitter.Emit(app.ctx, e.Tag(), e)
-		}),
+		scanner.WithOnEvent(app.onScannerEvent),
 		scanner.WithMulticastGroup(s.MulticastGroup),
 		scanner.WithDevicePort(s.DevicePort),
 	}
@@ -319,6 +242,109 @@ func (a *App) watchRegistry(ch <-chan registry.MutationEvent) {
 			delete(a.logStreams, ev.DeviceID)
 		}
 		a.logStreamsMu.Unlock()
+	}
+}
+
+// onScannerEvent is the dispatch entry for every scanner event.
+// It logs the event and routes to a per-type policy method
+// (onDeviceIPDrifted / onUnknownDevice) plus a fallthrough
+// forward-to-frontend. Previously a 70-line closure inlined all
+// three concerns (state mutation, policy, event forwarding) and
+// was hard to unit-test.
+func (a *App) onScannerEvent(e scanner.Event) {
+	a.logger.Info("scanner event", slog.String("tag", e.Tag()))
+	switch ev := e.(type) {
+	case scanner.EventDeviceIPDrifted:
+		a.onDeviceIPDrifted(ev)
+		return
+	case scanner.EventUnknownDeviceDiscovered:
+		a.onUnknownDevice(ev)
+		a.forwardToFrontend(e)
+		return
+	}
+	a.forwardToFrontend(e)
+}
+
+// forwardToFrontend emits the event onto the Wails event bus so
+// the TS subscriber can react. See frontend/src/hooks/useWailsEvents.ts
+// for the variadic-args contract — TS unwraps args[0].
+func (a *App) forwardToFrontend(e scanner.Event) {
+	a.emitter.Emit(a.ctx, e.Tag(), e)
+}
+
+// onDeviceIPDrifted re-anchors a registered device whose IP
+// changed (mDNS-driven). No-ops on empty NewIP (an mDNS browse
+// that lost the entry doesn't carry one).
+func (a *App) onDeviceIPDrifted(ev scanner.EventDeviceIPDrifted) {
+	if ev.NewIP == "" {
+		return
+	}
+	err := a.reg.Update(ev.DeviceID, func(en *registry.Entry) {
+		if ev.NewIP != "" {
+			en.IP = ev.NewIP
+		}
+		if ev.NewPort > 0 {
+			en.Port = ev.NewPort
+		}
+		en.LastSource = "mdns"
+	})
+	if err != nil {
+		a.logger.Warn("mdns drift: registry update failed",
+			slog.String("device", ev.DeviceID),
+			slog.String("err", err.Error()))
+		return
+	}
+	fresh, _ := a.reg.Get(ev.DeviceID)
+	a.logger.Info("mdns drift re-anchored",
+		slog.String("device", ev.DeviceID),
+		slog.String("from", ev.OldIP),
+		slog.String("to", ev.NewIP))
+	a.emitter.Emit(a.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
+}
+
+// onUnknownDevice upserts an auto-accepted entry for a device
+// the registry hasn't seen before (mDNS or subnet scan). On
+// create, emit info-updated so the UI's reducer sees a fresh row.
+func (a *App) onUnknownDevice(u scanner.EventUnknownDeviceDiscovered) {
+	id := u.Info.DeviceID
+	if id == "" {
+		return
+	}
+	ip := u.IP
+	if ip == "" && u.Info.Network.PrimaryIP != "" {
+		ip = u.Info.Network.PrimaryIP
+	}
+	port := u.Port
+	if port == 0 {
+		port = listenPort
+	}
+	entry := registry.Entry{
+		DeviceID:   id,
+		IP:         ip,
+		Port:       port,
+		Username:   "",
+		DeployedAt: timefmt.NowUTC(),
+		LastSource: "accept",
+		Online:     true,
+	}
+	created, err := a.reg.Upsert(id, entry, func(en *registry.Entry) {
+		en.IP = ip
+		en.Port = port
+		en.LastSource = "accept"
+		en.Online = true
+	})
+	if err != nil {
+		a.logger.Warn("auto-accept: registry upsert failed",
+			slog.String("device", id),
+			slog.String("err", err.Error()))
+		return
+	}
+	if created {
+		a.logger.Info("auto-accepted new device",
+			slog.String("device", id),
+			slog.String("ip", ip))
+		fresh, _ := a.reg.Get(id)
+		a.emitter.Emit(a.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
 	}
 }
 
