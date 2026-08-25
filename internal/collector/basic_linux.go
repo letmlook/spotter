@@ -9,13 +9,13 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
+	"github.com/spotter/spotter/internal/timefmt"
 )
 
 func nowUTC() string {
-	return time.Now().UTC().Format(time.RFC3339)
+	return timefmt.NowUTC()
 }
 
 func collectBasic() protocol.BasicInfo {

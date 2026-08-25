@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/spotter/spotter/internal/protocol"
 )
 
 // ExecSystemctl invokes systemctl with the given action. Package-level
@@ -251,7 +253,7 @@ func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	unit := a.cfg.LogUnit
 	if unit == "" {
-		unit = "spotterd.service"
+		unit = protocol.DefaultLogUnit
 	}
 	tail := parseLogTail(r.URL.Query().Get("tail"), defaultLogTail)
 

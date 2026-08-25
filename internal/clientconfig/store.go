@@ -10,17 +10,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/spotter/spotter/internal/jsonstore"
 	"github.com/spotter/spotter/internal/protocol"
 )
 
-// Defaults. Multicast group + device port are re-exported from
-// internal/protocol so the client's settings file (which uses the
-// names DefaultMulticastGroup / DefaultDevicePort) does not need
-// to import scanner.
+// Defaults. Multicast group + device port + log unit are
+// re-exported from internal/protocol so the client's settings file
+// (which uses the names DefaultMulticastGroup / DefaultDevicePort
+// / DefaultLogUnit) does not need to import scanner.
 const (
 	DefaultMulticastGroup = protocol.DefaultMulticastAddr
 	DefaultDevicePort     = protocol.DefaultDevicePort
@@ -28,7 +28,7 @@ const (
 	DefaultHTTPTimeout    = 3 * time.Second
 	DefaultMcastInterval  = 5 * time.Second
 	DefaultPollInterval   = 5 * time.Second
-	DefaultLogUnit        = "spotterd.service"
+	DefaultLogUnit        = protocol.DefaultLogUnit
 )
 
 // Settings is the on-disk shape. Fields with omitempty are optional;
@@ -160,12 +160,5 @@ func (s *Store) fillDefaultsLocked() {
 }
 
 func (s *Store) flushLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(&s.s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0600)
+	return jsonstore.Save(s.path, &s.s, 0600)
 }

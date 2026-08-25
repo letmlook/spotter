@@ -23,4 +23,10 @@ const (
 	// when probing a device. Used as the fallback when a
 	// registry.Entry.Port is unset.
 	DefaultDevicePort = 9999
+
+	// DefaultLogUnit is the journalctl -u unit name the agent
+	// tails when /api/v1/logs is enabled. Both ends previously
+	// hard-coded "spotterd.service" inline — keep the two
+	// agreeing via this constant.
+	DefaultLogUnit = "spotterd.service"
 )

@@ -30,6 +30,7 @@ import (
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 	"github.com/spotter/spotter/internal/scanner"
+	"github.com/spotter/spotter/internal/timefmt"
 )
 
 //go:embed all:frontend/dist
@@ -213,40 +214,46 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 			// Server-side auto-accept for unknown devices. The JS
 			// EventsOn hook is brittle (variadic-args shape across
 			// wails versions), so we make the runtime-independent
-			// path: add it here and emit info-updated so the UI's
+			// path: upsert here and emit info-updated so the UI's
 			// reducer sees a fresh row.
 			if u, ok := e.(scanner.EventUnknownDeviceDiscovered); ok {
 				id := u.Info.DeviceID
 				if id != "" {
-					if _, exists := app.reg.Get(id); !exists {
-						ip := u.IP
-						if ip == "" && u.Info.Network.PrimaryIP != "" {
-							ip = u.Info.Network.PrimaryIP
-						}
-						port := u.Port
-						if port == 0 {
-							port = listenPort
-						}
-						entry := registry.Entry{
-							DeviceID:   id,
-							IP:         ip,
-							Port:       port,
-							Username:   "",
-							DeployedAt: time.Now().UTC().Format(time.RFC3339),
-							LastSource: "accept",
-							Online:     true,
-						}
-						if err := app.reg.Add(entry); err == nil {
-							logger.Info("auto-accepted new device",
-								slog.String("device", id),
-								slog.String("ip", ip))
-							fresh, _ := app.reg.Get(id)
-							app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
-						} else {
-							logger.Warn("auto-accept: registry add failed",
-								slog.String("device", id),
-								slog.String("err", err.Error()))
-						}
+					ip := u.IP
+					if ip == "" && u.Info.Network.PrimaryIP != "" {
+						ip = u.Info.Network.PrimaryIP
+					}
+					port := u.Port
+					if port == 0 {
+						port = listenPort
+					}
+					entry := registry.Entry{
+						DeviceID:   id,
+						IP:         ip,
+						Port:       port,
+						Username:   "",
+						DeployedAt: timefmt.NowUTC(),
+						LastSource: "accept",
+						Online:     true,
+					}
+					created, err := app.reg.Upsert(id, entry, func(en *registry.Entry) {
+						en.IP = ip
+						en.Port = port
+						en.LastSource = "accept"
+						en.Online = true
+					})
+					if err != nil {
+						logger.Warn("auto-accept: registry upsert failed",
+							slog.String("device", id),
+							slog.String("err", err.Error()))
+					} else if created {
+						logger.Info("auto-accepted new device",
+							slog.String("device", id),
+							slog.String("ip", ip))
+					}
+					if created || err == nil {
+						fresh, _ := app.reg.Get(id)
+						app.emitter.Emit(app.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
 					}
 				}
 				app.emitter.Emit(app.ctx, e.Tag(), e)
@@ -385,33 +392,35 @@ func (a *App) ProbeByIP(ip string, port int, username string) (registry.Entry, e
 	if info.DeviceID == "" {
 		return registry.Entry{}, fmt.Errorf("probe: response missing device_id")
 	}
-	// Already registered? Just refresh.
-	if existing, ok := a.reg.Get(info.DeviceID); ok {
-		a.reg.Update(info.DeviceID, func(e *registry.Entry) {
-			e.IP = ip
-			e.Port = port
-			e.LastSeenAt = time.Now().UTC().Format(time.RFC3339)
-			e.LastSource = "manual-probe"
-			e.Online = true
-			e.LastInfo = &info
-		})
-		return existing, nil
-	}
-	e := registry.Entry{
+	// Already registered? Just refresh. Otherwise add a fresh row.
+	// Single Upsert call replaces the Get→Update/Add dance.
+	newEntry := registry.Entry{
 		DeviceID:   info.DeviceID,
 		IP:         ip,
 		Port:       port,
 		Username:   username,
-		DeployedAt: time.Now().UTC().Format(time.RFC3339),
-		LastSeenAt: time.Now().UTC().Format(time.RFC3339),
+		DeployedAt: timefmt.NowUTC(),
+		LastSeenAt: timefmt.NowUTC(),
 		LastSource: "manual-probe",
 		Online:     true,
 		LastInfo:   &info,
 	}
-	if err := a.reg.Add(e); err != nil {
-		return registry.Entry{}, fmt.Errorf("add: %w", err)
+	created, err := a.reg.Upsert(info.DeviceID, newEntry, func(e *registry.Entry) {
+		e.IP = ip
+		e.Port = port
+		e.LastSeenAt = timefmt.NowUTC()
+		e.LastSource = "manual-probe"
+		e.Online = true
+		e.LastInfo = &info
+	})
+	if err != nil {
+		return registry.Entry{}, fmt.Errorf("upsert: %w", err)
 	}
-	return e, nil
+	if created {
+		return newEntry, nil
+	}
+	existing, _ := a.reg.Get(info.DeviceID)
+	return existing, nil
 }
 
 // AcceptUnknownDevice adds a previously-unknown device (discovered
@@ -430,20 +439,21 @@ func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username
 	if port == 0 {
 		port = listenPort
 	}
-	if _, ok := a.reg.Get(deviceID); ok {
-		return registry.Entry{}, fmt.Errorf("device %q already in registry", deviceID)
-	}
 	e := registry.Entry{
 		DeviceID:   deviceID,
 		IP:         ip,
 		Port:       port,
 		Username:   username,
-		DeployedAt: time.Now().UTC().Format(time.RFC3339),
+		DeployedAt: timefmt.NowUTC(),
 		LastSource: "accept",
 		Online:     false,
 	}
-	if err := a.reg.Add(e); err != nil {
+	created, err := a.reg.Upsert(deviceID, e, nil)
+	if err != nil {
 		return registry.Entry{}, fmt.Errorf("add to registry: %w", err)
+	}
+	if !created {
+		return registry.Entry{}, fmt.Errorf("device %q already in registry", deviceID)
 	}
 	// Best-effort immediate poll so the row shows up populated quickly.
 	go func() {

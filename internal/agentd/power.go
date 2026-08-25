@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/spotter/spotter/internal/timefmt"
 )
 
 // PowerRequest is the body of POST /api/v1/power. We accept the
@@ -78,7 +80,7 @@ func (a *AuditLogger) Record(action string, dryRun bool, requestID, remote, resu
 		return
 	}
 	fmt.Fprintf(a.f, "%s\t%s\tdry_run=%v\treq=%s\tip=%s\tresult=%s\n",
-		time.Now().UTC().Format(time.RFC3339),
+		timefmt.NowUTC(),
 		action, dryRun, requestID, remote, result)
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
+	"github.com/spotter/spotter/internal/timefmt"
 )
 
 // SetAuditLogger attaches an AuditLogger to the agent. Called by
@@ -125,7 +126,7 @@ func (a *Agent) SetInfo(info protocol.DeviceInfo) {
 	} else {
 		info.Auth = nil
 	}
-	info.LastHeartbeatAt = protocol.LastHeartbeatAt(time.Now().UTC().Format(time.RFC3339))
+	info.LastHeartbeatAt = protocol.LastHeartbeatAt(timefmt.NowUTC())
 	a.info = info
 }
 

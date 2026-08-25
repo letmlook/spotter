@@ -9,10 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"sync"
 	"time"
+
+	"github.com/spotter/spotter/internal/jsonstore"
 
 	"github.com/spotter/spotter/internal/protocol"
 )
@@ -180,6 +180,30 @@ func (r *Registry) Update(deviceID string, mut func(*Entry)) error {
 	return nil
 }
 
+// Upsert inserts the entry when absent, or applies mut when
+// present. Returns created=true if a new row was added. Replaces
+// the Get-then-Add-or-Update dance that previously lived at three
+// call sites in main.go (auto-accept on unknown discovery,
+// ProbeByIP, AcceptUnknownDevice).
+func (r *Registry) Upsert(deviceID string, newEntry Entry, mut func(*Entry)) (created bool, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.entries[deviceID]; ok {
+		mut(e)
+		if err := r.flushLocked(); err != nil {
+			return false, err
+		}
+		r.broadcastLocked(MutationEvent{Op: OpUpdate, DeviceID: deviceID})
+		return false, nil
+	}
+	r.entries[deviceID] = &newEntry
+	if err := r.flushLocked(); err != nil {
+		return true, err
+	}
+	r.broadcastLocked(MutationEvent{Op: OpAdd, DeviceID: deviceID})
+	return true, nil
+}
+
 // Get returns a copy of the entry.
 func (r *Registry) Get(deviceID string) (Entry, bool) {
 	r.mu.Lock()
@@ -228,26 +252,5 @@ func (r *Registry) Close() error {
 }
 
 func (r *Registry) flushLocked() error {
-	if err := os.MkdirAll(filepath.Dir(r.path), 0755); err != nil {
-		return err
-	}
-	// Marshal a key-sorted projection so devices.json content is stable
-	// across writes (Go map iteration order is randomised). The
-	// returned slice wraps the original pointer values; the alternative
-	// of marshalling r.entries directly would diff unnecessarily on
-	// every flush.
-	keys := make([]string, 0, len(r.entries))
-	for k := range r.entries {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ordered := make(map[string]*Entry, len(r.entries))
-	for _, k := range keys {
-		ordered[k] = r.entries[k]
-	}
-	data, err := json.MarshalIndent(ordered, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(r.path, data, 0600)
+	return jsonstore.Save(r.path, jsonstore.Ordered(r.entries), 0600)
 }

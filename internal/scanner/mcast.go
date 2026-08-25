@@ -9,19 +9,15 @@ import (
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
+	"github.com/spotter/spotter/internal/timefmt"
+
+	"github.com/spotter/spotter/internal/looputil"
 )
 
 func (s *Scanner) mcastLoop(ctx context.Context) {
-	t := time.NewTicker(s.opts.McastInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			s.mcastOnce(ctx)
-		}
-	}
+	looputil.RunTicker(ctx, s.opts.McastInterval, func() {
+		s.mcastOnce(ctx)
+	})
 }
 
 // mcastOnce sends a single HELLO and collects replies on one UDP
@@ -60,7 +56,7 @@ func (s *Scanner) mcastOnce(ctx context.Context) {
 	hello := protocol.HelloPacket{
 		Type:     "hello",
 		SenderID: s.opts.ClientSenderID,
-		TS:       time.Now().UTC().Format(time.RFC3339),
+		TS:       timefmt.NowUTC(),
 	}
 	data, err := json.Marshal(hello)
 	if err != nil {

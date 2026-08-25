@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
+	"github.com/spotter/spotter/internal/looputil"
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
 )
@@ -111,16 +111,9 @@ func (s *Scanner) handlePollFailure(e registry.Entry, fails *pollFailures, cause
 
 // pollLoop runs PollOnce every interval until ctx is done.
 func (s *Scanner) pollLoop(ctx context.Context) {
-	t := time.NewTicker(s.opts.PollInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			if err := s.PollOnce(ctx); err != nil {
-				s.opts.Logger.Debug("poll loop tick failed", "err", err.Error())
-			}
+	looputil.RunTicker(ctx, s.opts.PollInterval, func() {
+		if err := s.PollOnce(ctx); err != nil {
+			s.opts.Logger.Debug("poll loop tick failed", "err", err.Error())
 		}
-	}
+	})
 }

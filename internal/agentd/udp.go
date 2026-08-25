@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/spotter/spotter/internal/protocol"
+	"github.com/spotter/spotter/internal/timefmt"
+
+	"github.com/spotter/spotter/internal/looputil"
 )
 
 // helloInterval is the default cadence at which the agent proactively
@@ -141,16 +144,9 @@ func (a *Agent) runHelloEmit(ctx context.Context) {
 	// client before the first interval tick.
 	a.emitHello(conn)
 
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			a.emitHello(conn)
-		}
-	}
+	looputil.RunTicker(ctx, interval, func() {
+		a.emitHello(conn)
+	})
 }
 
 // emitHello marshals and writes a single HELLO packet to conn. Called
@@ -159,7 +155,7 @@ func (a *Agent) emitHello(conn *net.UDPConn) {
 	pkt := protocol.HelloPacket{
 		Type:     "hello",
 		SenderID: a.cfg.DeviceID,
-		TS:       time.Now().UTC().Format(time.RFC3339),
+		TS:       timefmt.NowUTC(),
 	}
 	data, err := json.Marshal(pkt)
 	if err != nil {

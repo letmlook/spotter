@@ -15,6 +15,7 @@ import (
 	"github.com/spotter/spotter/internal/mdns"
 	"github.com/spotter/spotter/internal/protocol"
 	"github.com/spotter/spotter/internal/registry"
+	"github.com/spotter/spotter/internal/timefmt"
 )
 
 // ErrPowerActionTimeout is returned by RebootDevice/ShutdownDevice when
@@ -215,7 +216,10 @@ func (s *Scanner) emit(e Event) {
 }
 
 // timeNowUTC returns the current UTC time in RFC3339 format.
-func timeNowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
+// Thin wrapper around timefmt.NowUTC — kept because every callsite
+// used the longer name and we did not want to do a token-by-token
+// rename on top of the import in this PR.
+func timeNowUTC() string { return timefmt.NowUTC() }
 
 // Start runs all discovery loops until ctx is cancelled.
 func (s *Scanner) Start(ctx context.Context) {

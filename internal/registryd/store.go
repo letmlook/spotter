@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/spotter/spotter/internal/jsonstore"
 )
 
 // Device is the persistent shape of a registered spotterd agent.
@@ -128,22 +129,5 @@ func (s *Store) MarkOffline(id string, at time.Time) error {
 }
 
 func (s *Store) flushLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
-		return err
-	}
-	// Stable key order so the file diff doesn't flap on every flush.
-	keys := make([]string, 0, len(s.devs))
-	for k := range s.devs {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ordered := make(map[string]*Device, len(s.devs))
-	for _, k := range keys {
-		ordered[k] = s.devs[k]
-	}
-	data, err := json.MarshalIndent(ordered, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0600)
+	return jsonstore.Save(s.path, jsonstore.Ordered(s.devs), 0600)
 }
