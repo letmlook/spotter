@@ -1,6 +1,6 @@
 import { Card } from 'antd';
 import type { RegistryEntry } from '../state/DeviceContext';
-import { formatUptime, formatTimestamp } from '../utils/format';
+import { formatUptime, formatTimestamp, relativeTimeParts } from '../utils/format';
 import { useI18n } from '../state/I18nContext';
 
 export default function BasicCard({ device }: { device: RegistryEntry }) {
@@ -110,6 +110,22 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
           <span style={value}>
             {formatTimestamp(info.collected_at)}
           </span>
+          {info.collected_at && (() => {
+            const r = relativeTimeParts(info.collected_at);
+            const key =
+              r.value === null
+                ? null
+                : `time.${r.unit}.ago`;
+            const suffix =
+              key === null
+                ? ''
+                : t(key, { n: String(r.value) });
+            return suffix ? (
+              <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                {' · '}{suffix}
+              </span>
+            ) : null;
+          })()}
           {info.stale && (
             <span
               title={t('card.basic.stale.help')}

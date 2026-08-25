@@ -7,8 +7,9 @@ interface I18nContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
   // Translate a key. Falls back to English, then to the key itself.
-  // Supports simple {placeholder} substitution.
-  t: (key: string, params?: Record<string, string>) => string;
+  // Supports both `{{n}}` (i18n-style, preferred) and `{n}` (ICU-style)
+  // placeholders so dictionary authors can pick whichever fits.
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -21,9 +22,11 @@ function readStoredLocale(): Locale {
   return 'en';
 }
 
-function interpolate(template: string, params?: Record<string, string>): string {
+function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_, k) => params[k] ?? `{${k}}`);
+  return template
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => String(params[k] ?? `{{${k}}}`))
+    .replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
