@@ -212,3 +212,43 @@ func TestPersistence_ReloadsAcrossOpens(t *testing.T) {
 		t.Errorf("reloaded: %+v", d)
 	}
 }
+
+// TestHub_SubCount exercises the subscriber-count metric
+// used by /api/v1/metrics-style endpoints and integration
+// tests verifying subscriber lifecycle. Without this
+// observable an operator has no way to detect a stuck or
+// orphaned WebSocket fan-out.
+func TestHub_SubCount(t *testing.T) {
+	hub := NewHub()
+	if got := hub.SubCount(); got != 0 {
+		t.Errorf("SubCount = %d on a fresh Hub, want 0", got)
+	}
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	hub.Subscribe(ctx1)
+	if got := hub.SubCount(); got != 1 {
+		t.Errorf("SubCount after 1 subscribe = %d, want 1", got)
+	}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	hub.Subscribe(ctx2)
+	if got := hub.SubCount(); got != 2 {
+		t.Errorf("SubCount after 2 subscribes = %d, want 2", got)
+	}
+	cancel1()
+	// Subcount drops asynchronously via the goroutine inside
+	// Subscribe that deletes on ctx.Done.
+	waitForCount := func(want int, timeout time.Duration) {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) && hub.SubCount() != want {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	waitForCount(1, time.Second)
+	if got := hub.SubCount(); got != 1 {
+		t.Errorf("SubCount after cancel1 = %d, want 1", got)
+	}
+	cancel2()
+	waitForCount(0, time.Second)
+	if got := hub.SubCount(); got != 0 {
+		t.Errorf("SubCount after cancel2 = %d, want 0", got)
+	}
+}

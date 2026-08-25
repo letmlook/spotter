@@ -34,6 +34,15 @@ type Hub struct {
 
 func NewHub() *Hub { return &Hub{subs: map[chan Event]struct{}{}} }
 
+// SubCount returns the current number of subscribers. Cheap
+// (one mutex acquire) and used by /api/v1/metrics-style
+// endpoints or tests verifying subscriber lifecycle.
+func (h *Hub) SubCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs)
+}
+
 func (h *Hub) Publish(ev Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
