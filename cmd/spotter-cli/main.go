@@ -96,36 +96,34 @@ func registryPath() string {
 	return filepath.Join(dir, "devices.json")
 }
 
-// openStoreSilent is the test-friendly variant: it does NOT exit on
-// error; the caller inspects the returned error. Production code
-// uses openStore which does os.Exit.
-func openStoreSilent() (reg *registry.Registry, cfg *clientconfig.Store, err error) {
+// openStore loads the registry + settings files. When exitOnErr
+// is true (production callers) it logs to stderr and os.Exit(1)
+// on failure so the binary's UX matches traditional CLI
+// expectations. Tests pass false and inspect the returned
+// error directly — no second wrapper.
+func openStore(exitOnErr bool) (*registry.Registry, *clientconfig.Store, error) {
 	reg, rerr := registry.Open(registryPath())
 	if rerr != nil {
+		if exitOnErr {
+			fmt.Fprintln(os.Stderr, "open registry:", rerr)
+			os.Exit(1)
+		}
 		return nil, nil, rerr
 	}
 	cfg, serr := clientconfig.Open(settingsPath())
 	if serr != nil {
 		reg.Close()
+		if exitOnErr {
+			fmt.Fprintln(os.Stderr, "open settings:", serr)
+			os.Exit(1)
+		}
 		return nil, nil, serr
 	}
 	return reg, cfg, nil
 }
 
-// openStore is the production path used by cmdList / cmdScan /
-// cmdInfo. It logs to stderr and exits non-zero on failure so
-// the binary's UX matches traditional CLI expectations.
-func openStore() (*registry.Registry, *clientconfig.Store) {
-	reg, cfg, err := openStoreSilent()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "open store:", err)
-		os.Exit(1)
-	}
-	return reg, cfg
-}
-
 func cmdList(stdout, stderr io.Writer) int {
-	reg, _ := openStore()
+	reg, _, _ := openStore(true)
 	defer reg.Close()
 	list := reg.List()
 	if len(list) == 0 {
@@ -150,7 +148,7 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 	cidr := fs.String("cidr", "", "CIDR to scan (default: auto)")
 	timeout := fs.Duration("timeout", 30*time.Second, "overall timeout")
 	_ = fs.Parse(args)
-	reg, cfg := openStore()
+	reg, cfg, _ := openStore(true)
 	defer reg.Close()
 	opts := []func(*scanner.Options){
 		scanner.WithMulticastGroup(cfg.Get().MulticastGroup),
@@ -184,7 +182,7 @@ func cmdInfo(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	id := args[0]
-	reg, _ := openStore()
+	reg, _, _ := openStore(true)
 	defer reg.Close()
 	fresh, ok := reg.Get(id)
 	if !ok {

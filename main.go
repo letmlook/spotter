@@ -185,9 +185,11 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 	opts := []func(*scanner.Options){
 		scanner.WithOnEvent(func(e scanner.Event) {
 			logger.Info("scanner event", slog.String("tag", e.Tag()))
-			// Emit on Wails event bus. Wails EventsOn callbacks receive
-			// variadic Go args as a single JS arg, but we marshal
-			// manually so TS side sees the object directly (not []).
+			// Emit on Wails event bus. The emitter is variadic on the
+			// Go side (Emits ...interface{}) and Wails wraps each
+			// element into a JS array — the TS subscriber must
+			// unwrap args[0] to get the payload (see
+			// frontend/src/hooks/useWailsEvents.ts).
 			switch ev := e.(type) {
 			case scanner.EventDeviceIPDrifted:
 				if ev.NewIP == "" {
