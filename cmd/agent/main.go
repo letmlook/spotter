@@ -99,6 +99,21 @@ func runAgent(configPath string, log *slog.Logger) int {
 	}
 	installAuditLogger(agent, log)
 
+	// On signal: drain the HTTP server (Close) so in-flight
+	// /api/v1/info / power-action requests can finish writing
+	// their response before we tear down. Without Close the
+	// ctx-cancel inside StartHTTP would slam the listener
+	// shut mid-response, dropping the body. Close runs with
+	// its own 5s grace timeout; Start's blocking call returns
+	// as soon as Shutdown drains (or the grace expires).
+	go func() {
+		<-ctx.Done()
+		log.Info("signal received, draining HTTP")
+		if err := agent.Close(); err != nil {
+			log.Warn("agent close", slog.String("err", err.Error()))
+		}
+	}()
+
 	log.Info("agent ready",
 		slog.String("device_id", cfg.DeviceID),
 		slog.String("listen", cfg.ListenAddr),
