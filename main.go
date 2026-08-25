@@ -142,6 +142,11 @@ func main() {
 }
 
 // App is the Wails-bound object. Frontend calls these methods.
+// The 14 exposed methods cover four concerns (settings, registry,
+// scanner, log-stream); the facade keeps the Wails Bind surface
+// flat so the frontend does not have to know about an internal
+// split. NewApp wires the dependencies once and the methods stay
+// narrow.
 type App struct {
 	reg          *registry.Registry
 	settings      *clientconfig.Store

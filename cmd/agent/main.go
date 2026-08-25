@@ -70,14 +70,57 @@ func main() {
 	flag.Parse()
 
 	log := newLogger(*logLevel)
-	cfg, err := loadConfig(*configPath)
+	if code := runAgent(*configPath, log); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// runAgent wires the spotterd agent: load config, build the
+// agent, run collectors + HTTP + mDNS until ctx is cancelled.
+// Returns 0 on graceful shutdown, 1 on a fatal startup error so
+// main() can os.Exit. Splitting this out of main() makes the
+// startup sequence testable and lets each step have its own
+// helper (applyDefaults / buildAgent / installAudit / announceMDNS).
+func runAgent(configPath string, log *slog.Logger) int {
+	cfg, err := loadConfig(configPath)
 	if err != nil {
 		log.Error("load config", slog.String("err", err.Error()))
-		os.Exit(1)
+		return 1
 	}
+	applyConfigDefaults(&cfg)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	agent, err := buildAgent(ctx, cfg, log)
+	if err != nil {
+		log.Error("create agent", slog.String("err", err.Error()))
+		return 1
+	}
+	installAuditLogger(agent, log)
+
+	log.Info("agent ready",
+		slog.String("device_id", cfg.DeviceID),
+		slog.String("listen", cfg.ListenAddr),
+		slog.String("multicast", cfg.MulticastGroup),
+	)
+
+	if err := agent.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Error("start", slog.String("err", err.Error()))
+		return 1
+	}
+	announceMDNS(ctx, log, cfg.DeviceID, cfg.ListenAddr)
+	log.Info("agent stopped")
+	return 0
+}
+
+// applyConfigDefaults fills the blank cfg fields with the same
+// defaults documented in /etc/spotterd/agent.toml.
+func applyConfigDefaults(cfg *tomlConfig) {
 	if cfg.DeviceID == "" {
-		log.Error("config missing device_id")
-		os.Exit(1)
+		// No default for device_id — the operator must set it,
+		// otherwise New() will return errMissing.
+		return
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = protocol.DefaultListenAddr
@@ -88,7 +131,12 @@ func main() {
 	if cfg.AgentVersion == "" {
 		cfg.AgentVersion = defaultAgentVersion
 	}
+}
 
+// buildAgent constructs the *agentd.Agent from cfg, performing the
+// initial collector pass and wiring SetCollector for live
+// re-collects on every /api/v1/info request.
+func buildAgent(ctx context.Context, cfg tomlConfig, log *slog.Logger) (*agentd.Agent, error) {
 	agent, err := agentd.New(agentd.Config{
 		DeviceID:           cfg.DeviceID,
 		ListenAddr:         cfg.ListenAddr,
@@ -103,11 +151,11 @@ func main() {
 			Token:   cfg.Auth.Token,
 		},
 		Server: agentd.ServerConfig{
-			ReadTimeout:          cfg.Server.ReadTimeout,
-			WriteTimeout:         cfg.Server.WriteTimeout,
-			MaxHeaderBytes:       cfg.Server.MaxHeaderBytes,
-			PowerActionRatePerS:  cfg.Server.PowerActionRate,
-			LogStreamRatePerS:    cfg.Server.LogStreamRate,
+			ReadTimeout:         cfg.Server.ReadTimeout,
+			WriteTimeout:        cfg.Server.WriteTimeout,
+			MaxHeaderBytes:      cfg.Server.MaxHeaderBytes,
+			PowerActionRatePerS: cfg.Server.PowerActionRate,
+			LogStreamRatePerS:   cfg.Server.LogStreamRate,
 		},
 		Logs: agentd.LogsConfig{
 			Unit:        cfg.Logs.Unit,
@@ -116,19 +164,9 @@ func main() {
 		},
 	}, log)
 	if err != nil {
-		log.Error("create agent", slog.String("err", err.Error()))
-		os.Exit(1)
+		return nil, err
 	}
 
-	// Cross-platform signal handling:
-	//   - os.Interrupt maps to SIGINT on Unix and CTRL+C on Windows.
-	//   - syscall.SIGTERM is included for systemd. On Windows it is
-	//     converted to os.Interrupt semantics by the runtime when the
-	//     process is killed, but adding it is harmless.
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	// Collect initial info.
 	c := collector.New()
 	info, err := c.Collect(ctx)
 	if err != nil {
@@ -138,41 +176,35 @@ func main() {
 	info.AgentVersion = cfg.AgentVersion
 	agent.SetInfo(info)
 	// Live-recollect on every /api/v1/info so the GUI sees fresh
-	// collected_at and uptime_seconds after a manual refresh — the
-	// cached snapshot would otherwise stay pinned to startup time.
+	// collected_at and uptime_seconds after a manual refresh.
 	agent.SetCollector(c.Collect)
-	log.Info("agent ready",
-		slog.String("device_id", cfg.DeviceID),
-		slog.String("listen", cfg.ListenAddr),
-		slog.String("multicast", cfg.MulticastGroup),
-	)
+	return agent, nil
+}
 
-	if err := agent.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Error("start", slog.String("err", err.Error()))
-		os.Exit(1)
-	}
-
-	// Open audit log for power-action traceability.
-	auditPath := "/var/log/spotterd/audit.tsv"
+// installAuditLogger opens the operator-facing audit TSV and wires
+// it into the agent. Failure is non-fatal — the agent still runs
+// without audit traceability — but the warning is loud so operators
+// notice missing disk or wrong permissions.
+func installAuditLogger(agent *agentd.Agent, log *slog.Logger) {
+	const auditPath = "/var/log/spotterd/audit.tsv"
 	if a, err := agentd.NewAuditLogger(auditPath); err == nil {
 		agent.SetAuditLogger(a)
 		log.Info("audit log open", slog.String("path", auditPath))
 	} else {
 		log.Warn("audit log unavailable", slog.String("err", err.Error()))
 	}
+}
 
-	// Register the agent under _spotter._tcp via mDNS so clients can
-	// re-anchor when the device migrates to a different subnet. The
-	// announce lives until ctx is cancelled (zeroconf owns the
-	// goroutine and Shutdown cleanly tears it down).
-	port := listenPortFromAddr(cfg.ListenAddr)
-	if port > 0 {
-		announceAndShutdown(ctx, log, cfg.DeviceID, port)
-	} else {
-		log.Warn("skip mDNS announce: invalid listen_addr", slog.String("addr", cfg.ListenAddr))
+// announceMDNS registers the agent under _spotter._tcp via mDNS so
+// clients can re-anchor when the device migrates to a different
+// subnet. Skipped silently if the listen_addr port can't be parsed.
+func announceMDNS(ctx context.Context, log *slog.Logger, deviceID, listenAddr string) {
+	port := listenPortFromAddr(listenAddr)
+	if port <= 0 {
+		log.Warn("skip mDNS announce: invalid listen_addr", slog.String("addr", listenAddr))
+		return
 	}
-
-	log.Info("agent stopped")
+	announceAndShutdown(ctx, log, deviceID, port)
 }
 
 // listenPortFromAddr extracts the port from "host:port". Defaults to

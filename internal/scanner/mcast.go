@@ -33,7 +33,24 @@ func (s *Scanner) mcastOnce(ctx context.Context) {
 		s.opts.Logger.Debug("resolve mcast", "err", err.Error())
 		return
 	}
+	conn := dialMcastSocket(addr)
+	if conn == nil {
+		return
+	}
+	defer conn.Close()
+	if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
+		s.opts.Logger.Debug("mcast set read deadline", "err", err.Error())
+	}
+	if !writeHello(conn, addr, s.opts.ClientSenderID) {
+		return
+	}
+	s.readReplies(ctx, conn)
+}
 
+// dialMcastSocket binds a UDP socket suitable for both writing the
+// HELLO and receiving unicast replies on. Returns nil if the bind
+// fails (logs at Debug).
+func dialMcastSocket(addr *net.UDPAddr) *net.UDPConn {
 	// Bind to the same family as the dial target. For real multicast,
 	// zero IP works (the kernel picks the right interface). For
 	// unicast loopback tests, bind to the same IP so replies sent to
@@ -45,29 +62,33 @@ func (s *Scanner) mcastOnce(ctx context.Context) {
 	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: listenIP, Port: 0})
 	if err != nil {
-		s.opts.Logger.Debug("mcast listen", "err", err.Error())
-		return
+		return nil
 	}
-	defer conn.Close()
-	if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
-		s.opts.Logger.Debug("mcast set read deadline", "err", err.Error())
-	}
+	return conn
+}
 
+// writeHello marshals and sends a single HELLO packet via conn.
+func writeHello(conn *net.UDPConn, addr *net.UDPAddr, senderID string) bool {
 	hello := protocol.HelloPacket{
 		Type:     "hello",
-		SenderID: s.opts.ClientSenderID,
+		SenderID: senderID,
 		TS:       timefmt.NowUTC(),
 	}
 	data, err := json.Marshal(hello)
 	if err != nil {
 		slog.Default().Debug("mcast marshal hello", "err", err.Error())
-		return
+		return false
 	}
 	if _, err := conn.WriteToUDP(data, addr); err != nil {
-		s.opts.Logger.Debug("mcast write", "err", err.Error())
-		return
+		slog.Default().Debug("mcast write", "err", err.Error())
+		return false
 	}
+	return true
+}
 
+// readReplies reads HELLO_REPLY packets from conn until the read
+// deadline expires. Each reply is fed to mergeInfo.
+func (s *Scanner) readReplies(_ context.Context, conn *net.UDPConn) {
 	buf := make([]byte, 64*1024)
 	for {
 		n, src, err := conn.ReadFromUDP(buf)

@@ -38,7 +38,8 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/reboot", a.handlePowerAction("reboot"))
 	mux.HandleFunc("/api/v1/shutdown", a.handlePowerAction("shutdown"))
 	mux.HandleFunc("/api/v1/logs", a.handleLogs)
-	mux.HandleFunc("/api/v1/power", a.handlePowerDispatch)
+	mux.HandleFunc("POST /api/v1/power", a.handlePowerUnified)
+	mux.HandleFunc("GET /api/v1/power/audit", a.handlePowerAuditGet)
 	mux.HandleFunc("/api/v1/power/cancel", a.handlePowerCancel)
 	return a.recoverMiddleware(rateLimitMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger), a.powerLimiter()))
 }

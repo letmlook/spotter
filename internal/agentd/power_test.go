@@ -287,7 +287,7 @@ func TestPowerAuditGet_NoAudit(t *testing.T) {
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/power")
+		resp, err := http.Get(ts.URL + "/api/v1/power/audit")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestPowerAuditGet_WithAudit(t *testing.T) {
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/power")
+		resp, err := http.Get(ts.URL + "/api/v1/power/audit")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,13 +336,32 @@ func TestPowerAuditGet_WithAudit(t *testing.T) {
 	}
 }
 
-// TestPowerDispatch_MethodNotAllowed — non-GET, non-POST must 405.
-func TestPowerDispatch_MethodNotAllowed(t *testing.T) {
+// TestPowerUnified_MethodNotAllowed — PUT against /api/v1/power
+// must 405 (only POST is registered).
+func TestPowerUnified_MethodNotAllowed(t *testing.T) {
 	a := newPowerAgent(t, true)
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
 
 	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/power", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("got %d, want 405", resp.StatusCode)
+	}
+}
+
+// TestPowerAuditGet_MethodNotAllowed — POST against
+// /api/v1/power/audit must 405 (only GET is registered).
+func TestPowerAuditGet_MethodNotAllowed(t *testing.T) {
+	a := newPowerAgent(t, true)
+	ts := httptest.NewServer(a.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/power/audit", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

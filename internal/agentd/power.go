@@ -84,19 +84,11 @@ func (a *AuditLogger) Record(action string, dryRun bool, requestID, remote, resu
 		action, dryRun, requestID, remote, result)
 }
 
-// handlePowerDispatch is the v0.5+ unified endpoint. It dispatches
-// /api/v1/power (POST) for the unified request shape; GET on the
-// same path returns the local audit log as JSON.
-func (a *Agent) handlePowerDispatch(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		a.handlePowerAuditGet(w, r)
-	case http.MethodPost:
-		a.handlePowerUnified(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
+// handlePowerDispatch was removed when /api/v1/power split into
+// two endpoints (POST for unified dispatch, GET /api/v1/power/audit
+// for the audit log). The mux in Handler() now matches method +
+// path separately, and a 405 falls out automatically when neither
+// pattern matches.
 
 func (a *Agent) handlePowerAuditGet(w http.ResponseWriter, _ *http.Request) {
 	if a.audit == nil {
