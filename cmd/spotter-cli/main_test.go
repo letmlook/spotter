@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -204,27 +205,33 @@ func TestRun_ScanInvalidCIDR_ExitOne(t *testing.T) {
 }
 
 func TestRun_ScanExplicitCIDR_KnownLAN(t *testing.T) {
-	// Pure-network test: start a fake spotterd on 127.0.0.1, run
-	// scan against that /30, expect "scanning 127.0.0.0/30"
-	// progress on stderr. We can't assert discovery (loopback
-	// behaves differently), only that the command reached the
-	// ScanSubnet call without panicking.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Bind a fake spotterd to 127.0.0.1:9999 (the device port
+	// scanner probes) so the 127.0.0.0/30 scan finds the
+	// listener. httptest.NewServer binds a random port and
+	// cannot be reached from the scanner; NewUnstartedServer
+	// + explicit Listener.Close() + Start() on our listener
+	// is the documented pattern.
+	ln, err := net.Listen("tcp", "127.0.0.1:9999")
+	if err != nil {
+		t.Skipf("cannot bind 127.0.0.1:9999 in this sandbox: %v", err)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schema_version":2,"device_id":"probe","basic":{"hostname":"h"}}`))
+		_, _ = w.Write([]byte(`{"schema_version":2,"device_id":"loopback-probe","basic":{"hostname":"h"}}`))
 	}))
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
 	defer srv.Close()
 	withIsolatedHome(t)
-	_ = srv
-	_, errOut, code := runInProcess([]string{"scan", "--cidr=127.0.0.0/30", "--timeout=2s"})
-	if code != 0 && code != 1 {
-		t.Errorf("want 0 or 1, got %d", code)
+	_, errOut, code := runInProcess([]string{"scan", "--cidr=127.0.0.0/30", "--timeout=3s"})
+	if code != 0 {
+		t.Errorf("scan returned %d, want 0 (stderr=%q)", code, errOut)
 	}
 	if !strings.Contains(errOut, "scanning 127.0.0.0/30") {
-		t.Errorf("want 'scanning ...' progress: %q", errOut)
+		t.Errorf("want scanning progress: %q", errOut)
 	}
 }
-
 func TestRFC1918RankInline(t *testing.T) {
 	cases := map[string]int{
 		"10.0.0.0/24":    0,
