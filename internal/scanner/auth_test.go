@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -65,9 +67,51 @@ func TestScanner_NewRequest_NoHeaderWhenTokenEmpty(t *testing.T) {
 }
 
 // TestScanner_PostPowerAction_UnauthorizedReturnsTypedError exercises
-// the new 401 branch added in v0.3: when an agent demands a token
-// but the scanner has none configured, the surfaced error includes
-// "token required" so the UI can prompt the user.
+// the 401 branch added in v0.3: when an agent demands a token but
+// the scanner has none configured, the surfaced error includes
+// "token required" so the UI can prompt the user. (Previously a
+// t.Skip stub citing e2e_test.go; no such test existed.)
 func TestScanner_PostPowerAction_UnauthorizedReturnsTypedError(t *testing.T) {
-	t.Skip("covered by integration test in e2e_test.go; skip at unit level to avoid double-running")
+	r, _ := registry.Open(t.TempDir() + "/x.json")
+	defer r.Close()
+
+	// Stand up a fake spotterd that demands a token we will not send.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"token required"}`, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	s := New(r) // no WithAuthToken
+
+	// Parse srv.URL into host + port so we can call the public
+	// RebootDevice / ShutdownDevice entry points (the production
+	// path the UI uses).
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := u.Hostname()
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("parse test server port from %q: %v", srv.URL, err)
+	}
+
+	for _, call := range []struct {
+		name string
+		fn   func(context.Context) error
+	}{
+		{"reboot", func(ctx context.Context) error { return s.RebootDevice(ctx, host, port) }},
+		{"shutdown", func(ctx context.Context) error { return s.ShutdownDevice(ctx, host, port) }},
+	} {
+		err := call.fn(context.Background())
+		if err == nil {
+			t.Errorf("%s: want error from 401, got nil", call.name)
+			continue
+		}
+		// The user-facing message must include "token required" so
+		// the UI's prompt is unambiguous.
+		if !strings.Contains(err.Error(), "token required") {
+			t.Errorf("%s: error %q does not mention 'token required'", call.name, err.Error())
+		}
+	}
 }

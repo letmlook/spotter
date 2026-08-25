@@ -42,14 +42,17 @@ func (a *Agent) Handler() http.Handler {
 }
 
 // handlePowerCancel terminates the most recent pending delayed
-// dispatch for this device. The current implementation is a stub —
-// in-flight delayExec goroutines self-terminate via ctx, but
-// cancellation across processes requires a pid file we haven't
-// shipped yet.
+// dispatch for this device. Until v0.6 ships a pid-file-backed
+// cancel API, the endpoint returns 501 Not Implemented rather
+// than the previous fake 200 success — the GUI's Cancel button
+// should now visibly no-op instead of silently lying.
 func (a *Agent) handlePowerCancel(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":  "cancel not yet implemented",
+		"status": "would_cancel",
+	})
 }
 
 // powerLimiter is the per-IP token bucket gating POST

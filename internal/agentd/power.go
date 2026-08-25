@@ -3,6 +3,7 @@ package agentd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -48,7 +49,11 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	// O_RDWR (not O_WRONLY) so GET /api/v1/power can stream the
+	// file back over HTTP. The audit log is append-only by
+	// contract (Record never seeks before writing), but the GET
+	// path needs read access on the same fd.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0640)
 	if err != nil {
 		return nil, fmt.Errorf("audit open: %w", err)
 	}
@@ -108,17 +113,11 @@ func (a *Agent) handlePowerAuditGet(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
-	buf := make([]byte, 4096)
-	for {
-		n, err := a.audit.f.Read(buf)
-		if n > 0 {
-			_, _ = w.Write(buf[:n])
-			a.audit.f.Seek(0, 1) // reset to current offset
-			break
-		}
-		if err != nil {
-			break
-		}
+	// io.Copy drains the file in 32 KB chunks; previously this
+	// loop read once into a 4 KB buffer and broke, capping every
+	// response at the first chunk.
+	if _, err := io.Copy(w, a.audit.f); err != nil {
+		a.logger.Error("audit stream", slog.String("err", err.Error()))
 	}
 }
 
@@ -168,7 +167,9 @@ func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = json.NewEncoder(w).Encode(resp)
-	a.audit.Record(req.Action, req.DryRun, req.RequestID, r.RemoteAddr, resp.Status)
+	if a.audit != nil {
+		a.audit.Record(req.Action, req.DryRun, req.RequestID, r.RemoteAddr, resp.Status)
+	}
 }
 
 // delayExec sleeps until t, then runs ExecSystemctl. It honours
@@ -181,5 +182,7 @@ func (a *Agent) delayExec(req PowerRequest, remote string, at time.Time) {
 	}
 	time.Sleep(d)
 	_ = ExecSystemctl(req.Action)
-	a.audit.Record(req.Action, false, req.RequestID, remote, "delayed-executed")
+	if a.audit != nil {
+		a.audit.Record(req.Action, false, req.RequestID, remote, "delayed-executed")
+	}
 }
