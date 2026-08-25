@@ -11,10 +11,20 @@ import (
 
 func TestCollectNetworkSmoke(t *testing.T) {
 	info := collectNetwork()
-	// On real Linux there is at least lo or eth0; we just need no panic
-	// and a sensible primary IP (often empty on weird CI envs).
-	_ = info.PrimaryIP
-	_ = info.Interfaces
+	// On real Linux there is at least lo; we assert the slice is
+	// non-empty so a future refactor that drops all interfaces
+	// surfaces here, not in a GUI surprise.
+	if len(info.Interfaces) == 0 {
+		t.Errorf("collectNetwork returned 0 interfaces; expected at least lo")
+	}
+	// PrimaryIP may be empty on locked-down runners, but if any
+	// interface has an IPv4 address we should have picked one.
+	for _, iface := range info.Interfaces {
+		if len(iface.Addrs) > 0 && info.PrimaryIP == "" {
+			t.Errorf("interface %s has addrs but PrimaryIP empty", iface.Name)
+			break
+		}
+	}
 }
 
 func TestDeviceInfoNetworkMarshals(t *testing.T) {

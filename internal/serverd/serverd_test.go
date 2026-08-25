@@ -164,12 +164,30 @@ func TestHub_PublishDeliversToSubscribers(t *testing.T) {
 
 func TestHub_DropsSlowConsumers(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	hub.Subscribe(ctx)
-	for i := 0; i < 100; i++ {
-		hub.Publish(Event{Type: "flood"})
+	// 0-buffer subscriber: any send to ch while nobody's reading
+	// must drop on the floor. Drive 100 publishes with no
+	// receiver; if the implementation ever blocks instead of
+	// dropping, this test will hang and -timeout will surface it.
+	ch := make(chan Event) // unbuffered
+	hub.mu.Lock()
+	hub.subs[ch] = struct{}{}
+	hub.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			hub.Publish(Event{Type: "flood", DeviceID: "d"})
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		// ok — publishes all returned without blocking
+	case <-time.After(time.Second):
+		t.Fatal("Publish blocked on slow consumer (must drop)")
 	}
+	hub.mu.Lock()
+	delete(hub.subs, ch)
+	hub.mu.Unlock()
 }
 
 func TestPersistence_ReloadsAcrossOpens(t *testing.T) {
