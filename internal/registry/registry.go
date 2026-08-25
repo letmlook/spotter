@@ -40,8 +40,30 @@ type MutationEvent struct {
 // well below it.
 const defaultSubscriberBuffer = 64
 
-// Entry is a row in devices.json. Includes last-known runtime info
-// (LastInfo) so the UI can render offline devices' last known state.
+// Entry is a row in devices.json. The fields fall into two
+// distinct groups; the split is documented here so callers
+// know which fields change on a poll-vs-discovery vs which
+// only the user can mutate.
+//
+//   IDENTITY (set once at registration, mutated by the scanner on
+//   drift):
+//     DeviceID, IP, Port, Username, DeployedAt, Tags
+//
+//   LIFECYCLE (mutated on every poll/discovery event):
+//     LastSeenAt, LastSource, Online
+//
+//   CACHED SNAPSHOT (refreshed by the scanner every poll tick;
+//   stale=true when the agent served its cached copy after a fresh-
+//   collect failure):
+//     LastInfo *protocol.DeviceInfo
+//
+// LastInfo is a "shadow copy" of the most recent GET /api/v1/info
+// response. It exists so the UI can render an offline device's
+// last known hostname / IP / OS without a fresh round trip — it
+// is NOT the source of truth for any identity field. Mutating
+// identity fields through LastInfo would let a stale cache
+// silently overwrite a freshly-registered entry, so all writes
+// go through the structured fields above.
 type Entry struct {
 	DeviceID   string               `json:"device_id"`
 	IP         string               `json:"ip"`
@@ -51,8 +73,8 @@ type Entry struct {
 	LastSeenAt string               `json:"last_seen_at"`
 	LastSource string               `json:"last_source"`
 	Online     bool                 `json:"online"`
-	LastInfo   *protocol.DeviceInfo `json:"last_info,omitempty"`
-	Tags       []string             `json:"tags,omitempty"` // v0.5: user-applied labels
+	LastInfo   *protocol.DeviceInfo `json:"last_info,omitempty"` // cached snapshot — see comment above
+	Tags       []string             `json:"tags,omitempty"`        // v0.5: user-applied labels
 }
 
 // Registry is safe for concurrent use.
