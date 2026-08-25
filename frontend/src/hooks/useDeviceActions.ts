@@ -1,10 +1,5 @@
-import {
-  ScanSubnet,
-  ProbeByIP,
-  RefreshNow,
-  RebootDevice,
-  ShutdownDevice,
-} from '../../wailsjs/go/main/App';
+import { ScanSubnet, RefreshNow } from '../../wailsjs/go/main/ScannerApp';
+import { ProbeByIP, RebootDevice, ShutdownDevice } from '../../wailsjs/go/main/RegistryApp';
 
 export interface DeviceActions {
   scan: (cidr?: string) => Promise<void>;

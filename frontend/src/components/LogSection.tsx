@@ -3,7 +3,7 @@ import { DownloadOutlined, ClearOutlined, SearchOutlined } from '@ant-design/ico
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../state/I18nContext';
 import { EventsOff, EventsOn } from '../../wailsjs/runtime/runtime';
-import { StartLogStream, StopLogStream } from '../../wailsjs/go/main/App';
+import { StartLogStream, StopLogStream } from '../../wailsjs/go/main/LogStreamApp';
 
 interface LogLine {
   ts: string;

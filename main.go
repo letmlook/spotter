@@ -132,7 +132,10 @@ func main() {
 		},
 		Frameless: true,
 		Bind: []interface{}{
-			app,
+			app.settingsApp,
+			app.registryApp,
+			app.scannerApp,
+			app.logStreamApp,
 		},
 	})
 	if err != nil {
@@ -181,12 +184,14 @@ func (s *settingsApp) Set(in clientconfig.Settings) error {
 	return s.s.Set(in)
 }
 
-// registryApp owns the device-registry CRUD surface: List +
-// Clear. (Power actions stay on the App facade because they need
-// the scanner for HTTP calls.)
+// registryApp owns the device-registry CRUD surface: List,
+// Clear, ProbeByIP, AcceptUnknownDevice, RebootDevice,
+// ShutdownDevice. Power actions live here because they need
+// the scanner for HTTP calls.
 type registryApp struct {
-	reg    *registry.Registry
-	logger *slog.Logger
+	reg     *registry.Registry
+	scanner *scanner.Scanner
+	logger  *slog.Logger
 }
 
 func (r *registryApp) List() []registry.Entry { return r.reg.List() }
@@ -201,10 +206,148 @@ func (r *registryApp) Clear() (int, error) {
 	return len(entries), nil
 }
 
-// scannerApp owns the scan triggers + enumeration. RefreshNow +
-// LocalSubnets (no Scanner lifecycle dependency) live here.
-// StartScanner and ScanSubnet stay on the App facade because
-// they need the full emitter + ctx.
+// powerAction is the shared body of RebootDevice/ShutdownDevice.
+func (r *registryApp) powerAction(deviceID, action string) error {
+	entry, ok := r.reg.Get(deviceID)
+	if !ok {
+		return fmt.Errorf("device not found: %s", deviceID)
+	}
+	if !entry.Online {
+		return fmt.Errorf("device %s is offline", deviceID)
+	}
+	port := entry.Port
+	if port == 0 {
+		port = protocol.DefaultDevicePort
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var err error
+	switch action {
+	case "reboot":
+		err = r.scanner.RebootDevice(ctx, entry.IP, port)
+	case "shutdown":
+		err = r.scanner.ShutdownDevice(ctx, entry.IP, port)
+	}
+	if errors.Is(err, scanner.ErrPowerActionTimeout) {
+		r.logger.Info("power action timeout (optimistic success)",
+			slog.String("device_id", deviceID),
+			slog.String("action", action))
+		return nil
+	}
+	return err
+}
+
+// RebootDevice sends a remote reboot command.
+func (r *registryApp) RebootDevice(deviceID string) error {
+	return r.powerAction(deviceID, "reboot")
+}
+
+// ShutdownDevice sends a remote shutdown command.
+func (r *registryApp) ShutdownDevice(deviceID string) error {
+	return r.powerAction(deviceID, "shutdown")
+}
+
+// AcceptUnknownDevice adds a previously-unknown device.
+func (r *registryApp) AcceptUnknownDevice(deviceID, ip string, port int, username string) (registry.Entry, error) {
+	r.logger.Info("accept-unknown-device called",
+		slog.String("device_id", deviceID),
+		slog.String("ip", ip),
+		slog.Int("port", port),
+		slog.String("username", username),
+	)
+	if deviceID == "" {
+		return registry.Entry{}, fmt.Errorf("deviceID required")
+	}
+	if port == 0 {
+		port = protocol.DefaultDevicePort
+	}
+	e := registry.Entry{
+		DeviceID:   deviceID,
+		IP:         ip,
+		Port:       port,
+		Username:   username,
+		DeployedAt: timefmt.NowUTC(),
+		LastSource: "accept",
+		Online:     false,
+	}
+	created, err := r.reg.Upsert(deviceID, e, nil)
+	if err != nil {
+		return registry.Entry{}, fmt.Errorf("add to registry: %w", err)
+	}
+	if !created {
+		return registry.Entry{}, fmt.Errorf("device %q already in registry", deviceID)
+	}
+	// Best-effort immediate poll so the row shows up populated quickly.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := r.scanner.PollOnce(ctx); err != nil {
+			r.logger.Debug("immediate poll after accept failed",
+				slog.String("err", err.Error()))
+		}
+	}()
+	return e, nil
+}
+
+// ProbeByIP fetches /api/v1/info from ip:port and upserts.
+func (r *registryApp) ProbeByIP(ip string, port int, username string) (registry.Entry, error) {
+	if port == 0 {
+		port = protocol.DefaultDevicePort
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("http://%s:%d/api/v1/info", ip, port)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return registry.Entry{}, err
+	}
+	resp, err := r.scanner.HTTPClient().Do(req)
+	if err != nil {
+		return registry.Entry{}, fmt.Errorf("probe: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return registry.Entry{}, fmt.Errorf("probe: HTTP %d", resp.StatusCode)
+	}
+	var info protocol.DeviceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return registry.Entry{}, fmt.Errorf("decode: %w", err)
+	}
+	if info.DeviceID == "" {
+		return registry.Entry{}, fmt.Errorf("probe: response missing device_id")
+	}
+	newEntry := registry.Entry{
+		DeviceID:   info.DeviceID,
+		IP:         ip,
+		Port:       port,
+		Username:   username,
+		DeployedAt: timefmt.NowUTC(),
+		LastSeenAt: timefmt.NowUTC(),
+		LastSource: "manual-probe",
+		Online:     true,
+		LastInfo:   &info,
+	}
+	created, err := r.reg.Upsert(info.DeviceID, newEntry, func(e *registry.Entry) {
+		e.IP = ip
+		e.Port = port
+		e.LastSeenAt = timefmt.NowUTC()
+		e.LastSource = "manual-probe"
+		e.Online = true
+		e.LastInfo = &info
+	})
+	if err != nil {
+		return registry.Entry{}, fmt.Errorf("upsert: %w", err)
+	}
+	if created {
+		return newEntry, nil
+	}
+	existing, _ := r.reg.Get(info.DeviceID)
+	return existing, nil
+}
+
+// scannerApp owns the scan triggers + enumeration: LocalSubnets,
+// RefreshNow, StartScanner, ScanSubnet.
 type scannerApp struct {
 	scanner *scanner.Scanner
 	logger  *slog.Logger
@@ -224,8 +367,34 @@ func (s *scannerApp) RefreshNow(ctx context.Context) error {
 	return s.scanner.PollOnce(ctx)
 }
 
+// StartScanner kicks off the scanner's poll/mcast loops until
+// ctx is cancelled. (OnStartup also does this — kept for
+// frontends that want explicit lifecycle control.)
+func (s *scannerApp) StartScanner(ctx context.Context) {
+	s.scanner.Start(ctx)
+}
+
+// ScanSubnet triggers a manual subnet scan. If cidr is empty,
+// the first non-loopback IPv4 subnet is auto-detected.
+func (s *scannerApp) ScanSubnet(cidr string) error {
+	if cidr == "" {
+		subs := lanscan.LocalSubnets()
+		if len(subs) == 0 {
+			return fmt.Errorf("no local subnet detected; pass an explicit CIDR")
+		}
+		cidr = subs[0]
+		s.logger.Info("auto-detected local subnet", slog.String("cidr", cidr))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return s.scanner.ScanSubnet(ctx, cidr, 30*time.Second)
+}
+
 // logStreamApp owns the per-device log-stream goroutines.
+// Holds the registry too because StartLogStream needs to look up
+// the entry's IP/port and check Online before launching a stream.
 type logStreamApp struct {
+	reg     *registry.Registry
 	scanner *scanner.Scanner
 	logger  *slog.Logger
 	emitter func(ctx context.Context, name string, data ...interface{})
@@ -236,19 +405,37 @@ type logStreamApp struct {
 	streamFn func(ctx context.Context, ip string, port int, onLine func(scanner.LogLine)) error
 }
 
-// start launches a single goroutine streaming deviceID's logs
-// and registers its cancel func. Idempotent for the same
-// deviceID.
-func (l *logStreamApp) start(deviceID, ip string, port int) {
+// StartLogStream launches a streaming goroutine for deviceID.
+// Idempotent: a second call for the same deviceID returns nil
+// without spawning a second goroutine.
+func (l *logStreamApp) StartLogStream(deviceID string) error {
+	entry, ok := l.reg.Get(deviceID)
+	if !ok {
+		return fmt.Errorf("device not found: %s", deviceID)
+	}
+	if !entry.Online {
+		return fmt.Errorf("device %s is offline", deviceID)
+	}
+	port := entry.Port
+	if port == 0 {
+		port = protocol.DefaultDevicePort
+	}
 	l.mu.Lock()
 	if _, exists := l.streams[deviceID]; exists {
 		l.mu.Unlock()
-		return
+		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	l.streams[deviceID] = cancel
 	l.mu.Unlock()
-	go l.run(ctx, deviceID, ip, port)
+	go l.run(ctx, deviceID, entry.IP, port)
+	return nil
+}
+
+// StopLogStream cancels the active stream for deviceID.
+func (l *logStreamApp) StopLogStream(deviceID string) error {
+	l.stop(deviceID)
+	return nil
 }
 
 // stop cancels (if any) the active stream for deviceID.
@@ -318,10 +505,11 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 		registryApp: &registryApp{reg: reg, logger: logger},
 		scannerApp:  &scannerApp{scanner: nil, logger: logger}, // wired after scanner.New below
 		logStreamApp: &logStreamApp{
-			scanner:  nil, // wired after scanner.New below
-			logger:   logger,
-			emitter:  emitter.Emit,
-			streams:  map[string]context.CancelFunc{},
+			reg:     reg,
+			scanner: nil, // wired after scanner.New below
+			logger:  logger,
+			emitter: emitter.Emit,
+			streams: map[string]context.CancelFunc{},
 			streamFn: nil, // wired after scanner.New below
 		},
 	}
@@ -486,258 +674,4 @@ func (a *App) onUnknownDevice(u scanner.EventUnknownDeviceDiscovered) {
 		fresh, _ := a.reg.Get(id)
 		a.emitter.Emit(a.ctx, "info-updated", scanner.EventInfoUpdated{Entry: fresh})
 	}
-}
-
-// GetSettings returns the current user settings. The frontend uses this
-// to pre-fill the Settings dialog.
-func (a *App) GetSettings() clientconfig.Settings { return a.settingsApp.Get() }
-
-// SetSettings replaces settings and flushes to disk. Returns the new
-// settings on success so the UI can update its form-state in one trip.
-func (a *App) SetSettings(in clientconfig.Settings) (clientconfig.Settings, error) {
-	if err := a.settingsApp.Set(in); err != nil {
-		return clientconfig.Settings{}, err
-	}
-	// Resync the scanner with the new values. The next poll/mcast
-	// tick picks them up, so we do NOT need to bounce the loop.
-	s := a.settingsApp.Get()
-	a.logger.Info("settings applied",
-		slog.String("multicast", s.MulticastGroup),
-		slog.Int("port", s.DevicePort),
-	)
-	return s, nil
-}
-
-// StartScanner begins the poll + mcast loops. The frontend calls this
-// once at startup. The ctx is canceled when the Wails app exits.
-// (OnStartup already starts the scanner; this binding is kept for
-// frontends that want to control the lifecycle explicitly.)
-func (a *App) StartScanner(ctx context.Context) {
-	a.scanner.Start(ctx)
-}
-
-// ListDevices returns the registry snapshot for the UI.
-func (a *App) ListDevices() []registry.Entry { return a.registryApp.List() }
-
-// ScanSubnet triggers a manual subnet scan. If cidr is empty, the
-// first non-loopback IPv4 subnet is auto-detected from the host's
-// network interfaces (RFC1918 ranges preferred). Pass an explicit
-// CIDR to scan something else.
-func (a *App) ScanSubnet(cidr string) error {
-	if cidr == "" {
-		subnets := a.LocalSubnets()
-		if len(subnets) == 0 {
-			return fmt.Errorf("no local subnet detected; pass an explicit CIDR")
-		}
-		cidr = subnets[0]
-		a.logger.Info("auto-detected local subnet", slog.String("cidr", cidr))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	return a.scanner.ScanSubnet(ctx, cidr, 30*time.Second)
-}
-
-// LocalSubnets returns the CIDRs of all non-loopback, up IPv4
-// interfaces on the host, ordered with RFC1918 ranges first
-// (10/8, 172.16/12, 192.168/16) so the most likely LAN segment is
-// at index 0. Link-local 169.254/16 is filtered out. The GUI uses
-// this to pre-fill / auto-trigger subnet scans. Implementation
-// lives in internal/lanscan so the CLI binary shares the same code.
-func (a *App) LocalSubnets() []string { return a.scannerApp.LocalSubnets() }
-
-// RefreshNow forces an immediate poll cycle.
-func (a *App) RefreshNow() error { return a.scannerApp.RefreshNow(a.ctx) }
-
-// ProbeByIP fetches /api/v1/info from ip:port and, if the device is
-// not already registered, adds it to the registry. Returns the new
-// entry. Useful for known-IP setups where UDP multicast is blocked.
-func (a *App) ProbeByIP(ip string, port int, username string) (registry.Entry, error) {
-	if port == 0 {
-		port = listenPort
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	url := fmt.Sprintf("http://%s:%d/api/v1/info", ip, port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return registry.Entry{}, err
-	}
-	resp, err := a.scanner.HTTPClient().Do(req)
-	if err != nil {
-		return registry.Entry{}, fmt.Errorf("probe: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return registry.Entry{}, fmt.Errorf("probe: HTTP %d", resp.StatusCode)
-	}
-	var info protocol.DeviceInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return registry.Entry{}, fmt.Errorf("decode: %w", err)
-	}
-	if info.DeviceID == "" {
-		return registry.Entry{}, fmt.Errorf("probe: response missing device_id")
-	}
-	// Already registered? Just refresh. Otherwise add a fresh row.
-	// Single Upsert call replaces the Get→Update/Add dance.
-	newEntry := registry.Entry{
-		DeviceID:   info.DeviceID,
-		IP:         ip,
-		Port:       port,
-		Username:   username,
-		DeployedAt: timefmt.NowUTC(),
-		LastSeenAt: timefmt.NowUTC(),
-		LastSource: "manual-probe",
-		Online:     true,
-		LastInfo:   &info,
-	}
-	created, err := a.reg.Upsert(info.DeviceID, newEntry, func(e *registry.Entry) {
-		e.IP = ip
-		e.Port = port
-		e.LastSeenAt = timefmt.NowUTC()
-		e.LastSource = "manual-probe"
-		e.Online = true
-		e.LastInfo = &info
-	})
-	if err != nil {
-		return registry.Entry{}, fmt.Errorf("upsert: %w", err)
-	}
-	if created {
-		return newEntry, nil
-	}
-	existing, _ := a.reg.Get(info.DeviceID)
-	return existing, nil
-}
-
-// AcceptUnknownDevice adds a previously-unknown device (discovered
-// via UDP multicast HELLO or subnet scan) to the local registry, so
-// subsequent polls start tracking it. Returns the new entry.
-func (a *App) AcceptUnknownDevice(deviceID string, ip string, port int, username string) (registry.Entry, error) {
-	a.logger.Info("accept-unknown-device called",
-		slog.String("device_id", deviceID),
-		slog.String("ip", ip),
-		slog.Int("port", port),
-		slog.String("username", username),
-	)
-	if deviceID == "" {
-		return registry.Entry{}, fmt.Errorf("deviceID required")
-	}
-	if port == 0 {
-		port = listenPort
-	}
-	e := registry.Entry{
-		DeviceID:   deviceID,
-		IP:         ip,
-		Port:       port,
-		Username:   username,
-		DeployedAt: timefmt.NowUTC(),
-		LastSource: "accept",
-		Online:     false,
-	}
-	created, err := a.reg.Upsert(deviceID, e, nil)
-	if err != nil {
-		return registry.Entry{}, fmt.Errorf("add to registry: %w", err)
-	}
-	if !created {
-		return registry.Entry{}, fmt.Errorf("device %q already in registry", deviceID)
-	}
-	// Best-effort immediate poll so the row shows up populated quickly.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := a.scanner.PollOnce(ctx); err != nil {
-			a.logger.Debug("immediate poll after accept failed",
-				slog.String("err", err.Error()))
-		}
-	}()
-	return e, nil
-}
-
-// ClearRegistry removes every entry from the local registry. Returns
-// the number of entries removed.
-func (a *App) ClearRegistry() (int, error) { return a.registryApp.Clear() }
-
-// RebootDevice sends a remote reboot command to the device identified
-// by deviceID. Returns an error if the device is not in the registry
-// or is marked offline. A client-side HTTP timeout is treated as
-// success — the command may have been dispatched before the agent's
-// connection hung up during reboot.
-func (a *App) RebootDevice(deviceID string) error {
-	return a.powerAction(deviceID, "reboot")
-}
-
-// ShutdownDevice sends a remote shutdown command. Same semantics as
-// RebootDevice. Note: there is no remote power-on; the device must be
-// physically powered back on.
-func (a *App) ShutdownDevice(deviceID string) error {
-	return a.powerAction(deviceID, "shutdown")
-}
-
-// powerAction is the shared body of RebootDevice/ShutdownDevice.
-func (a *App) powerAction(deviceID string, action string) error {
-	entry, ok := a.reg.Get(deviceID)
-	if !ok {
-		return fmt.Errorf("device not found: %s", deviceID)
-	}
-	if !entry.Online {
-		return fmt.Errorf("device %s is offline", deviceID)
-	}
-	port := entry.Port
-	if port == 0 {
-		port = listenPort
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var err error
-	switch action {
-	case "reboot":
-		err = a.scanner.RebootDevice(ctx, entry.IP, port)
-	case "shutdown":
-		err = a.scanner.ShutdownDevice(ctx, entry.IP, port)
-	}
-	if errors.Is(err, scanner.ErrPowerActionTimeout) {
-		a.logger.Info("power action timeout (optimistic success)",
-			slog.String("device_id", deviceID),
-			slog.String("action", action))
-		return nil
-	}
-	return err
-}
-
-// StartLogStream begins streaming the device's execution log. Each
-// NDJSON record is emitted as "device-log:{deviceID}" with payload
-// scanner.LogLine. Idempotent for the same deviceID: a second call
-// while a stream is active returns nil and does NOT spawn another
-// goroutine. Errors:
-//
-//   - device not in registry
-//   - device marked offline
-func (a *App) StartLogStream(deviceID string) error {
-	entry, ok := a.reg.Get(deviceID)
-	if !ok {
-		return fmt.Errorf("device not found: %s", deviceID)
-	}
-	if !entry.Online {
-		return fmt.Errorf("device %s is offline", deviceID)
-	}
-	port := entry.Port
-	if port == 0 {
-		port = listenPort
-	}
-	a.logStreamApp.start(deviceID, entry.IP, port)
-	return nil
-}
-
-// StopLogStream cancels the active log stream for deviceID. Returns
-// nil even if no stream is active.
-func (a *App) StopLogStream(deviceID string) error {
-	a.logStreamApp.stop(deviceID)
-	return nil
-}
-
-// runLogStream reads from streamFn and emits each line via the
-// Emitter. On exit (ctx cancel or stream error) it removes the
-// stream from the map and emits "device-log-end:{id}".
-func (a *App) runLogStream(ctx context.Context, deviceID, ip string, port int) {
-	a.logStreamApp.run(ctx, deviceID, ip, port)
 }

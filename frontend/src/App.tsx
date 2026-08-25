@@ -9,7 +9,7 @@ import AddDeviceByIPDialog from './components/AddDeviceByIPDialog';
 import AboutDialog from './components/AboutDialog';
 import { useWailsEvents } from './hooks/useWailsEvents';
 import { useMenu, MenuProvider } from './state/MenuContext';
-import { ScanSubnet } from '../wailsjs/go/main/App';
+import { ScanSubnet } from '../wailsjs/go/main/ScannerApp';
 import { I18nProvider, useI18n } from './state/I18nContext';
 import { ThemeProvider, useTheme } from './state/ThemeContext';
 

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import type { ReactNode } from 'react';
-import { ListDevices } from '../../wailsjs/go/main/App';
+import { List as ListDevices } from '../../wailsjs/go/main/RegistryApp';
 import { protocol, registry } from '../../wailsjs/go/models';
 
 // DeviceInfo and RegistryEntry live in the Wails-generated

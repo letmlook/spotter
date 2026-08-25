@@ -5,7 +5,7 @@ import { useDevices } from '../state/DeviceContext';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useI18n } from '../state/I18nContext';
 import { useTheme } from '../state/ThemeContext';
-import { ClearRegistry } from '../../wailsjs/go/main/App';
+import { Clear as ClearRegistry } from '../../wailsjs/go/main/RegistryApp';
 import { Quit } from '../../wailsjs/runtime/runtime';
 import type { Locale } from '../i18n/dictionaries';
 

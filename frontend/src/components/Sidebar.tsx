@@ -1,6 +1,6 @@
 import { Button, Tooltip, Popconfirm, Space, notification } from 'antd';
 import { ScanOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
-import { ClearRegistry } from '../../wailsjs/go/main/App';
+import { Clear as ClearRegistry } from '../../wailsjs/go/main/RegistryApp';
 import { useMenu } from '../state/MenuContext';
 import { useDevices } from '../state/DeviceContext';
 import { useI18n } from '../state/I18nContext';
@@ -58,7 +58,7 @@ export default function Sidebar() {
   const onRefreshAll = async () => {
     setRefreshing(true);
     try {
-      const { RefreshNow } = await import('../../wailsjs/go/main/App');
+      const { RefreshNow } = await import('../../wailsjs/go/main/ScannerApp');
       await RefreshNow();
       await refresh();
       notification.success({ message: t('notif.refresh.done'), placement: 'bottomRight', duration: 1.5 });

@@ -69,7 +69,7 @@ func TestStartLogStream_NotRegistered(t *testing.T) {
 	reg, _ := registry.Open(t.TempDir() + "/reg.json")
 	em := &fakeEmitter{}
 	a := newTestApp(t, reg, em)
-	err := a.StartLogStream("unknown")
+	err := a.logStreamApp.StartLogStream("unknown")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("want not-found error, got %v", err)
 	}
@@ -83,7 +83,7 @@ func TestStartLogStream_Offline(t *testing.T) {
 	})
 	em := &fakeEmitter{}
 	a := newTestApp(t, reg, em)
-	err := a.StartLogStream("d1")
+	err := a.logStreamApp.StartLogStream("d1")
 	if err == nil || !strings.Contains(err.Error(), "offline") {
 		t.Fatalf("want offline error, got %v", err)
 	}
@@ -98,7 +98,7 @@ func TestStartLogStream_OnlineEmitsLines(t *testing.T) {
 	em := &fakeEmitter{}
 	a := newTestApp(t, reg, em)
 
-	if err := a.StartLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StartLogStream("d1"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	// 等待 goroutine 完成 fake streamFn（3 行后返回 → defer emit end）
@@ -133,12 +133,12 @@ func TestStartLogStream_Idempotent(t *testing.T) {
 		return nil
 	}
 
-	if err := a.StartLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StartLogStream("d1"); err != nil {
 		t.Fatalf("Start 1: %v", err)
 	}
 	// 等 map 里有 entry
 	time.Sleep(50 * time.Millisecond)
-	if err := a.StartLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StartLogStream("d1"); err != nil {
 		t.Fatalf("Start 2 (idempotent): %v", err)
 	}
 	// 释放
@@ -147,12 +147,12 @@ func TestStartLogStream_Idempotent(t *testing.T) {
 
 	// 验证 streamFn 只被调用一次：通过计数 fakeEmitter 上 device-log:d1（应是 0，因为我们没 emit 行）
 	// 更直接：验证 logStreams 在 Start 2 后 map 中只一条；这里通过 Stop 行为间接验证。
-	if err := a.StopLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StopLogStream("d1"); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
 	// 再次 Stop no-op
-	if err := a.StopLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StopLogStream("d1"); err != nil {
 		t.Fatalf("Stop 2 (no-op): %v", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestStopLogStream_NoStream(t *testing.T) {
 	reg, _ := registry.Open(t.TempDir() + "/reg.json")
 	em := &fakeEmitter{}
 	a := newTestApp(t, reg, em)
-	if err := a.StopLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StopLogStream("d1"); err != nil {
 		t.Fatalf("Stop without Start should be no-op, got %v", err)
 	}
 }
@@ -179,7 +179,7 @@ func TestRunLogStream_ErrorPropagates(t *testing.T) {
 		return errors.New("boom")
 	}
 
-	if err := a.StartLogStream("d1"); err != nil {
+	if err := a.logStreamApp.StartLogStream("d1"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	deadline := time.Now().Add(2 * time.Second)

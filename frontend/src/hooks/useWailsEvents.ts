@@ -20,7 +20,7 @@ export function useWailsEvents(onUnknownDevice?: (payload: unknown) => void) {
       const port = event.Port ?? 9999;
       const deviceId = info.device_id ?? '';
       if (!deviceId) return;
-      import('../../wailsjs/go/main/App').then(({ AcceptUnknownDevice }) => {
+      import('../../wailsjs/go/main/RegistryApp').then(({ AcceptUnknownDevice }) => {
         AcceptUnknownDevice(deviceId, ip, port, '').then(refresh).catch((err: unknown) => {
           // eslint-disable-next-line no-console
           console.warn('AcceptUnknownDevice failed', deviceId, err);

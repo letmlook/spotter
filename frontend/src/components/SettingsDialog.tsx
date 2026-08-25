@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, Form, Input, InputNumber, Select, message, Button, Space } from 'antd';
 import { useI18n } from '../state/I18nContext';
-import { GetSettings, SetSettings } from '../../wailsjs/go/main/App';
+import { Get as GetSettings, Set as SetSettings } from '../../wailsjs/go/main/SettingsApp';
 
 interface SettingsShape {
   multicast_group?: string;
