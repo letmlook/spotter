@@ -16,9 +16,9 @@ import (
 // events, but v0.5 only delivers live updates (last-N replay is a
 // v0.5.1 add).
 type Event struct {
-	Type      string    `json:"type"` // "device-added" | "device-updated" | "device-removed" | "heartbeat-lost"
-	At        time.Time `json:"at"`
-	DeviceID  string    `json:"device_id"`
+	Type     string    `json:"type"` // "device-added" | "device-updated" | "device-removed" | "heartbeat-lost"
+	At       time.Time `json:"at"`
+	DeviceID string    `json:"device_id"`
 }
 
 // Hub is a many-publishers, many-subscribers fan-out for the
@@ -58,40 +58,41 @@ func (h *Hub) Subscribe(ctx context.Context) <-chan Event {
 	return ch
 }
 
-// Handler binds the REST + WebSocket routes to a Store+Hub.
+// Handler binds the REST + WebSocket routes to a Store+Hub. The
+// routing table is owned by an internal http.ServeMux built once
+// in NewHandler; previously ServeHTTP was a hand-rolled switch
+// with manual len() arithmetic for the "/api/v1/devices/{id}/
+// heartbeat" prefix — a typo (e.g. >= vs >) silently 404'd
+// heartbeats with no CI signal. Go 1.22's method+pattern mux
+// makes the table explicit and verifiable.
 type Handler struct {
 	Store *Store
 	Hub   *Hub
+	mux   *http.ServeMux
 }
 
-func NewHandler(s *Store, h *Hub) *Handler { return &Handler{Store: s, Hub: h} }
+func NewHandler(s *Store, h *Hub) *Handler {
+	hd := &Handler{Store: s, Hub: h}
+	hd.mux = hd.buildMux()
+	return hd
+}
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.URL.Path == "/healthz" && r.Method == http.MethodGet:
+// ServeHTTP delegates to the internal mux.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
+
+func (h *Handler) buildMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
-	case r.URL.Path == "/ws/events" && r.Method == http.MethodGet:
-		h.serveWS(w, r)
-	case r.URL.Path == "/api/v1/devices" && r.Method == http.MethodGet:
-		h.listDevices(w, r)
-	case r.URL.Path == "/api/v1/devices" && r.Method == http.MethodPost:
-		h.registerDevice(w, r)
-	case len(r.URL.Path) > len("/api/v1/devices/") && r.URL.Path[:len("/api/v1/devices/")] == "/api/v1/devices/":
-		rest := r.URL.Path[len("/api/v1/devices/"):]
-		switch {
-		case r.Method == http.MethodGet:
-			h.getDevice(w, r, rest)
-		case r.Method == http.MethodDelete:
-			h.deleteDevice(w, r, rest)
-		case r.Method == http.MethodPost && len(rest) > len("heartbeat") && rest[len(rest)-len("heartbeat"):] == "heartbeat":
-			h.recordHeartbeat(w, r, rest[:len(rest)-len("heartbeat")-1])
-		default:
-			http.NotFound(w, r)
-		}
-	default:
-		http.NotFound(w, r)
-	}
+	})
+	mux.HandleFunc("GET /ws/events", h.serveWS)
+	mux.HandleFunc("GET /api/v1/devices", h.listDevices)
+	mux.HandleFunc("POST /api/v1/devices", h.registerDevice)
+	mux.HandleFunc("GET /api/v1/devices/{id}", h.getDevice)
+	mux.HandleFunc("DELETE /api/v1/devices/{id}", h.deleteDevice)
+	mux.HandleFunc("POST /api/v1/devices/{id}/heartbeat", h.recordHeartbeat)
+	return mux
 }
 
 func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +106,7 @@ func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Port == 0 {
-		d.Port = 9999
+		d.Port = 9999 // see protocol.DefaultDevicePort — aligned in registryd-mux-cleanup PR
 	}
 	d.LastSource = "agent-registered"
 	if err := h.Store.Upsert(d); err != nil {
@@ -118,7 +119,44 @@ func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(d)
 }
 
-func (h *Handler) recordHeartbeat(w http.ResponseWriter, _ *http.Request, id string) {
+func (h *Handler) listDevices(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.Store.List())
+}
+
+// getDevice / deleteDevice / recordHeartbeat now take the id from
+// r.PathValue (Go 1.22+) instead of a string parameter so the mux
+// can match the variable.
+func (h *Handler) getDevice(w http.ResponseWriter, r *http.Request) {
+	d, err := h.Store.Get(r.PathValue("id"))
+	if errors.Is(err, ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(d)
+}
+
+func (h *Handler) deleteDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.Store.Delete(id); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.Hub.Publish(Event{Type: "device-removed", At: time.Now().UTC(), DeviceID: id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) recordHeartbeat(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	existing, err := h.Store.Get(id)
 	if errors.Is(err, ErrNotFound) {
 		http.Error(w, "device not registered", http.StatusNotFound)
@@ -135,38 +173,6 @@ func (h *Handler) recordHeartbeat(w http.ResponseWriter, _ *http.Request, id str
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *Handler) listDevices(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(h.Store.List())
-}
-
-func (h *Handler) getDevice(w http.ResponseWriter, _ *http.Request, id string) {
-	d, err := h.Store.Get(id)
-	if errors.Is(err, ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(d)
-}
-
-func (h *Handler) deleteDevice(w http.ResponseWriter, _ *http.Request, id string) {
-	if err := h.Store.Delete(id); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	h.Hub.Publish(Event{Type: "device-removed", At: time.Now().UTC(), DeviceID: id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
