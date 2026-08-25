@@ -14,6 +14,7 @@ type DeviceInfo struct {
 	Auth           *AuthInfo       `json:"auth,omitempty"`       // v2: present iff the agent has [auth] enabled
 	LastHeartbeatAt LastHeartbeatAt `json:"last_heartbeat_at"`    // v3: timestamp of last heartbeat
 	Metrics        *Metrics        `json:"metrics,omitempty"`    // v0.5: snapshot of system counters
+	Stale          bool            `json:"stale,omitempty"`      // v0.5: true when this payload is the cached snapshot served after a fresh-collect failure
 }
 
 type BasicInfo struct {

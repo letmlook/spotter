@@ -110,6 +110,23 @@ export default function BasicCard({ device }: { device: RegistryEntry }) {
           <span style={value}>
             {formatTimestamp(info.collected_at)}
           </span>
+          {info.stale && (
+            <span
+              title={t('card.basic.stale.help')}
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--text-warning, #c97a00)',
+                background: 'var(--bg-hover)',
+                padding: '1px 6px',
+                borderRadius: 3,
+                flex: '0 0 auto',
+                cursor: 'help',
+              }}
+            >
+              {t('card.basic.stale')}
+            </span>
+          )}
         </div>
       </div>
       <div style={{ ...cell, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>

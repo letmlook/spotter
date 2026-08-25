@@ -92,6 +92,11 @@ func (s *Scanner) pollOne(ctx context.Context, e registry.Entry, fails *pollFail
 		s.handlePollFailure(e, fails, err)
 		return
 	}
+	// Agent sets X-Spotter-Stale: true when the response body is
+	// the cached snapshot served after a fresh-collect failure.
+	// Carry the flag onto info so the frontend can render a
+	// "stale" chip without having to make a parallel HTTP call.
+	info.Stale = resp.Header.Get("X-Spotter-Stale") == "true"
 	fails.reset(e.DeviceID)
 	s.mergeInfo("registry-poll", e.IP, e.Port, info)
 }
