@@ -161,32 +161,18 @@ func (a *Agent) recoverMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// StartHTTP runs the HTTP server on cfg.ListenAddr. It blocks until ctx is
-// cancelled (or ListenAndServe returns an unexpected error), then calls
-// srv.Shutdown with a 5-second timeout.
+// StartHTTP runs the HTTP server on cfg.ListenAddr. It blocks until
+// Close() is called or ListenAndServe returns an unexpected error.
+// The ctx is honoured by StartUDP / runHeartbeat / runHelloEmit
+// (the HTTP server itself is shut down via Close, which lets us
+// drain in-flight requests instead of cancelling mid-response).
 func (a *Agent) StartHTTP(ctx context.Context) error {
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,
 		Handler: a.Handler(),
 	}
-	errCh := make(chan error, 1)
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		errCh <- srv.Shutdown(shutdownCtx)
-	}()
-	a.logger.Info("http listening", slog.String("addr", a.cfg.ListenAddr))
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	// Wait for shutdown to complete (or return its error).
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	a.SetHTTPServer(srv)
+	return srv.ListenAndServe()
 }
 
 // Start launches the UDP listener (non-blocking), the heartbeat

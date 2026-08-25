@@ -3,6 +3,7 @@ package agentd
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"runtime"
 	"sync"
 	"time"
@@ -85,6 +86,12 @@ type Agent struct {
 	// operator can grep / forward to a SIEM. Optional — set by
 	// the cmd/agent setup path.
 	audit *AuditLogger
+
+	// srv is the http.Server created lazily by StartHTTP.
+	// Held here so Close() can call Shutdown(ctx) without
+	// callers having to track the server themselves.
+	srv     *http.Server
+	srvOnce sync.Once
 }
 
 // New constructs an Agent. Returns an error if cfg is missing required fields.
@@ -145,6 +152,31 @@ func (a *Agent) Info() protocol.DeviceInfo {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.info
+}
+
+// SetHTTPServer is called once by StartHTTP to record the
+// running *http.Server so Close() can call Shutdown on it.
+// Public so StartHTTP (in http.go) can wire it without
+// exporting srv on the struct itself.
+func (a *Agent) SetHTTPServer(srv *http.Server) {
+	a.srvOnce.Do(func() { a.srv = srv })
+}
+
+// Close shuts the HTTP server down with a 5s grace period.
+// Idempotent. UDP / heartbeat goroutines are stopped by
+// cancelling the ctx passed to Start; this method exists so
+// callers (tests, cmd/agent, embedded integration) can shut
+// the HTTP side down independently of the ctx lifecycle.
+// After Close returns, Agent.Start's blocking ListenAndServe
+// returns and Start returns nil — so cmd/agent can Close
+// before the ctx is cancelled to drain in-flight requests.
+func (a *Agent) Close() error {
+	if a.srv == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return a.srv.Shutdown(ctx)
 }
 
 // refreshInfo runs the installed collector (if any) and replaces the

@@ -245,3 +245,101 @@ func TestRegistryCorruptRecovery_LogsButContinues(t *testing.T) {
 		t.Errorf("expected reset file content %q, got %q", "{}", string(data))
 	}
 }
+
+// TestRegistryUpsert_Create covers the create-branch: device
+// unknown → new entry inserted → created=true → broadcast
+// OpAdd. Pins the newEntry-by-value contract; the call site
+// never mutates the stored pointer until the broadcast fires.
+func TestRegistryUpsert_Create(t *testing.T) {
+	r, err := registry.Open(filepath.Join(t.TempDir(), "reg.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	got, err := r.Upsert("new-id", registry.Entry{
+		DeviceID: "new-id",
+		IP:       "10.0.0.5",
+		Port:     9999,
+	}, func(*registry.Entry) {})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if !got {
+		t.Errorf("created = false, want true on first Upsert")
+	}
+	entry, ok := r.Get("new-id")
+	if !ok {
+		t.Fatal("Get(new-id) after Upsert returned !ok")
+	}
+	if entry.IP != "10.0.0.5" || entry.Port != 9999 {
+		t.Errorf("entry = %+v, want IP=10.0.0.5 Port=9999", entry)
+	}
+}
+
+// TestRegistryUpsert_Update covers the update-branch: device
+// already known → mutator applied → created=false → broadcast
+// OpUpdate. The mutator must see the *current* entry (not a
+// zero value) and changes must round-trip.
+func TestRegistryUpsert_Update(t *testing.T) {
+	r, _ := registry.Open(filepath.Join(t.TempDir(), "reg.json"))
+	defer r.Close()
+	_ = r.Add(registry.Entry{DeviceID: "d1", IP: "10.0.0.1", Port: 9999, Online: false})
+
+	got, err := r.Upsert("d1", registry.Entry{DeviceID: "d1", IP: "10.0.0.99", Port: 9999}, func(e *registry.Entry) {
+		e.Online = true
+	})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if got {
+		t.Errorf("created = true on second Upsert, want false")
+	}
+	entry, _ := r.Get("d1")
+	// Upsert on update branch only calls the mutator — newEntry
+	// is ignored (that's the contract: caller picks whether to
+	// overwrite via the mutator body).
+	if entry.IP != "10.0.0.1" {
+		t.Errorf("IP = %q, want 10.0.0.1 (untouched by update-branch mutator)", entry.IP)
+	}
+	if !entry.Online {
+		t.Errorf("Online = false, want true (mutator applied)")
+	}
+}
+
+// TestRegistryUpsert_BroadcastOp exercises the mutation event
+// delivery — Upsert must emit OpAdd on create and OpUpdate on
+// update (no OpRemove). Without this the scanner's pollFailures
+// tracker wouldn't know to reset its counter for the device.
+func TestRegistryUpsert_BroadcastOp(t *testing.T) {
+	r, _ := registry.Open(filepath.Join(t.TempDir(), "reg.json"))
+	defer r.Close()
+
+	ch := r.Subscribe()
+
+	// Create → OpAdd
+	_, _ = r.Upsert("d1", registry.Entry{DeviceID: "d1", IP: "10.0.0.1"}, nil)
+	// Update → OpUpdate
+	_, _ = r.Upsert("d1", registry.Entry{DeviceID: "d1", IP: "10.0.0.2"}, func(e *registry.Entry) { e.Online = true })
+
+	var ops []string
+	deadline := time.After(300 * time.Millisecond)
+collect:
+	for {
+		select {
+		case ev := <-ch:
+			ops = append(ops, string(ev.Op))
+			if len(ops) >= 2 {
+				break collect
+			}
+		case <-deadline:
+			break collect
+		}
+	}
+	if len(ops) < 2 {
+		t.Fatalf("got %d events, want ≥2: %v", len(ops), ops)
+	}
+	if ops[0] != "add" || ops[1] != "update" {
+		t.Errorf("ops = %v, want [add update]", ops)
+	}
+}
