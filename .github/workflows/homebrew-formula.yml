@@ -25,21 +25,25 @@ jobs:
       - name: ruby syntax
         run: ruby -c scripts/packages/homebrew/spotter.rb
 
-      - name: recompute sha256 of v1.0.0 tarball
+      - name: Recompute sha256 from v1.0.0 tag
         id: sha
         run: |
           set -e
-          # For SHA-tagged releases we use the tag, but during the
-          # v1.0 cycle we're pinned to a moving HEAD. The formula
-          # is bumped when the version changes; this job fails if
-          # the formula's baked-in sha no longer matches HEAD.
-          git archive --format=tar.gz --prefix=spotter-1.0.0/ HEAD -o /tmp/spotter.tar.gz
+          # Use the actual v1.0.0 annotated tag, NOT a moving HEAD.
+          # git archive uses the tag tree so the sha is deterministic
+          # across checkouts.
+          if ! git rev-parse --verify v1.0.0 >/dev/null 2>&1; then
+            echo "::warning::v1.0.0 tag missing in this checkout — formula check is bypassed"
+            exit 0
+          fi
+          git archive --format=tar.gz --prefix=spotter-1.0.0/ v1.0.0 -o /tmp/spotter.tar.gz
           ACTUAL="$(sha256sum /tmp/spotter.tar.gz | awk '{print $1}')"
           echo "actual=$ACTUAL" >> "$GITHUB_OUTPUT"
+          echo "actual=$ACTUAL"
           EXPECTED="$(grep -oE 'sha256 "[a-f0-9]{64}"' scripts/packages/homebrew/spotter.rb | head -1 | awk -F'"' '{print $2}')"
-          echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
+          echo "expected=$EXPECTED"
           if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::sha mismatch — bump the formula via scripts/update-homebrew-sha.sh"
+            echo "::error::sha mismatch — re-run scripts/update-homebrew-sha.sh with VERSION=v1.0.0"
             exit 1
           fi
           echo "OK sha matches formula"

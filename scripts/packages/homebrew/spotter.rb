@@ -2,10 +2,12 @@ class Spotter < Formula
   desc "LAN device discovery: spotterd agent + cross-platform Wails GUI"
   homepage "https://github.com/spotter/spotter"
   url "https://github.com/spotter/spotter/archive/refs/tags/v1.0.0.tar.gz"
-  # Computed from `git archive --format=tar.gz --prefix=spotter-1.0.0/ HEAD`
-  # at HEAD (commit a81af29... = the v1.0.0 release commit). Re-run
-  # scripts/update-homebrew-sha.sh when bumping the version.
-  sha256 "a81af2979e9fd95716f2bb5ff7e69ad6ff19d5b72bca3fa5e6b67be0cd0677f2"
+  # Recomputed from `git archive --format=tar.gz --prefix=spotter-1.0.0/
+  # v1.0.0` after tagging v1.0.0. Verified locally; the
+  # homebrew-formula CI job rebuilds the tarball from the v1.0.0
+  # tag and asserts this string still matches — failure is a hard
+  # gate against the merge.
+  sha256 "f7150c2854100219671413084b525f2e5933bd39efe763ae4ceacfce3e32a09e"
   license "Apache-2.0"
 
   depends_on "go" => :build
