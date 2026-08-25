@@ -1,0 +1,104 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概览
+
+局域网设备发现工具，由**两个独立二进制**组成，共享 `internal/` 下的库代码：
+
+- **`spotterd`**（`cmd/agent/`，Linux only）— 设备端守护进程，作为 systemd 单元运行；提供 `GET /api/v1/info`、`GET /healthz`，并以 60s 周期在 `239.255.42.42:9999` 发送 UDP HELLO。仅构建 Linux `arm64` + `amd64`。
+- **`spotter-client`**（根目录 `main.go`）— Wails 桌面 GUI，源码在 `frontend/`（Vite + React + TS）。原生支持 macOS / Windows / Linux 三端，前端通过 `//go:embed frontend/dist` 嵌入。
+
+为什么拆两个：agent 不能依赖任何 webview / GUI 栈，必须是 headless 静态二进制；client 依赖系统 webview，矩阵由 Wails 处理。合并会让两端都背不必要的依赖。
+
+模块路径：`github.com/spotter/spotter`（Go 1.25）。
+
+## 客户端发现流水线（核心架构）
+
+client 通过三条独立通道发现设备，结果统一写入 `internal/registry.Registry`，**last-writer-wins**（按 `LastSeenAt`），变更以 Wails event 推前端：
+
+| 通道 | 实现 | 周期 | 触发器 |
+|------|------|------|--------|
+| 注册表轮询 | `internal/scanner/poll.go` | 30s | 对每个已知 device GET `/api/v1/info` |
+| UDP 组播 | `internal/scanner/mcast.go` | 60s | 监听 `239.255.42.42:9999` 上的 HELLO/HELLO-REPLY |
+| 手动子网扫描 | `internal/scanner/subnet.go` | 用户触发 | 自动探测本机 RFC1918 子网，逐 IP TCP 探活 + `/healthz` + `/api/v1/info` |
+
+融合逻辑集中在 `internal/scanner/merge.go` 的 `mergeInfo`——已注册则更新 `LastInfo / LastSeenAt / Online`，未注册则发出 `EventUnknownDeviceDiscovered`（GUI 可选择「接受」将其加入注册表）。连续失败 3 次的设备在 `pollFailures` 中被标记 offline（`EventOffline`）。
+
+前端 ↔ Go 边界在 `main.go` 的 `App` 结构体上——所有方法通过 Wails `Bind` 暴露给 JS 侧，事件通过 `wailsruntime.EventsEmit` 推送。`OnStartup` 注入真实 ctx 后才启动 scanner loop；`App.ctx` 用 `context.Background()` 占位以保证 Wails 启动前的早期事件不 panic。
+
+## 内部包结构
+
+| 包 | 端 | 说明 |
+| --- | :--: | --- |
+| `cmd/agent/` | agent | `spotterd` 入口，`//go:build linux` |
+| `internal/agentd/` | agent | HTTP server、UDP 广播循环、生命周期 |
+| `internal/collector/` | agent | `basic_linux.go` / `jetson_linux.go` / `network_linux.go`，**全部带 build tag**，仅 Linux |
+| `internal/protocol/` | 双端共享 | `DeviceInfo`（`/api/v1/info` 响应）+ UDP 包结构（`udp.go`）+ `schema_version.go` |
+| `internal/registry/` | client | 本地 JSON 设备注册表（`<UserConfig>/Spotter/devices.json`），线程安全 |
+| `internal/scanner/` | client | 三源融合；`merge.go` 是唯一写入 registry 的入口 |
+
+`protocol` 是**两端唯一共享的包**，修改前请确认字段向后兼容（schema_version）。
+
+## 常用命令（Makefile）
+
+```bash
+# 测试（启用竞态检测，覆盖全模块）
+make test
+# 单包测试
+go test ./internal/scanner/... -race -count=1 -run TestMerge
+# 单个测试函数
+go test ./internal/registry/ -run TestRegistry_Remove -count=1 -v
+
+# 设备端（agent）
+make agent                # 当前 GOOS/GOARCH
+make agent-linux-arm64    # 交叉编译
+make agent-linux-x64
+make agent-all            # 两个架构一次性构建
+
+# 客户端（GUI）
+make client               # 优先 wails CLI，缺失则回退到 go build（macOS 上不会产 .app 包）
+
+# 清理
+make clean                # 删除 bin/
+```
+
+发布：`make release` 调用 `scripts/build-all.sh`，产出落到 `dist/` 并自动生成 `SHA256SUMS`。
+
+## Lint 与 CI
+
+- `.golangci.yml` v2 配置，启用 bodyclose / errcheck / gofmt / goimports / gocritic / govet / ineffassign / misspell / nolintlint / prealloc / revive / staticcheck / unconvert / unused。
+- goimports `local-prefixes: github.com/spotter/spotter`——新 import 自动归组。
+- 测试文件豁免 `gosimple` 与 `gomnd`。
+- CI（`.github/workflows/`）：`go.yml`（test + lint）、`frontend.yml`（前端 build + typecheck）、`agent-build.yml`（交叉编译两个架构）、`release.yml`（tag 触发全量发布）。dependabot 周升级。
+- 当前 release workflow 中 golangci-lint 固定到 v2.5.0。
+
+## 配置来源
+
+| 用途 | 位置 | 归属 |
+| --- | --- | --- |
+| agent 监听/组播/device_id | `/etc/spotterd/agent.toml`（缺失文件非错，仅在字段为空时用默认） | 设备端 |
+| client 注册表 | `<UserConfig>/Spotter/devices.json` | 客户端 |
+| client 日志 | `<UserConfig>/Spotter/logs/spotter.log` | 客户端 |
+| Wails 打包选项 | `wails.json` | 客户端构建 |
+
+## 扩展点
+
+- **新增采集器**（agent）：在 `internal/collector/` 加 `xxx_linux.go`（必须带 `_linux.go` 后缀以匹配 build tag），实现 `Collector` 接口，由 `collector.New()` 组合。参考 `jetson_linux.go`。
+- **新增发现源**（client）：在 `internal/scanner/` 加新 loop 文件，由 `Scanner.Start` 启动 goroutine；新结果统一走 `merge.go` 写注册表 + 触发事件——**不要绕过 `mergeInfo` 直接写 registry**。
+- **新增协议字段**：先改 `DeviceInfo` 再改 `schema_version.go`；保证向后兼容。
+
+## 提交规范
+
+遵循 `.cursor/rules/git-commit-author.mdc`：
+
+- 作者固定 `letmlook <letmlook@aliyun.com>`——通过 `git commit --author=...` 指定，**不要修改 git config**。
+- 中文 commit message，格式 `[类型] 简短描述`（如 `feat: 添加 jetson 内存采集`）。
+- 仅在用户明确要求时提交；不要主动 commit。
+- 不 force push master；不 skip hooks。
+
+## 文档
+
+- 设计 spec（实施前的完整设计文档）：`docs/superpowers/specs/2026-08-21-spotter-design.md`
+- 运维 + 排障 + API + FAQ：`docs/` 下中英双语（默认中文，`.en.md` 为英文）
+- 中文 README 是项目入口：`README.md`
