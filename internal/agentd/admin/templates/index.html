@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} — {{.Device.Basic.Hostname}}</title>
+  <link rel="stylesheet" href="/admin/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>spotterd · {{.Device.Basic.Hostname}}</h1>
+    <p class="subtitle">v{{.Version}} · uptime {{.Uptime}} · rendered {{.GeneratedAt}}</p>
+  </header>
+  <main>
+    <section>
+      <h2>Identity</h2>
+      <dl>
+        <dt>Device ID</dt><dd><code>{{.Device.DeviceID}}</code></dd>
+        <dt>Hostname</dt><dd>{{.Device.Basic.Hostname}}</dd>
+        <dt>Username</dt><dd>{{.Device.Basic.Username}}</dd>
+        <dt>OS</dt><dd>{{.Device.Basic.OS.PrettyName}}</dd>
+        <dt>Distribution</dt><dd>{{.Device.Basic.OS.ID}} {{.Device.Basic.OS.VersionID}}</dd>
+        <dt>Kernel</dt><dd>{{.Device.Basic.Kernel}}</dd>
+        <dt>Arch</dt><dd>{{.Device.Basic.Arch}}</dd>
+        <dt>Agent version</dt><dd>{{.Device.AgentVersion}}</dd>
+        <dt>Schema</dt><dd>v{{.Device.SchemaVersion}}</dd>
+      </dl>
+    </section>
+
+    {{if .HasMetrics}}
+    <section>
+      <h2>Live metrics (last sample)</h2>
+      <dl>
+        <dt>CPU</dt><dd>{{if .LastSample.HaveCPU}}{{.LastSample.CPU}}{{else}}—{{end}}</dd>
+        <dt>Memory</dt>
+        <dd>
+          {{if .LastSample.HaveMem}}{{.LastSample.MemPct}}{{else}}—{{end}}
+          {{if .LastSample.MemUsed}}({{.LastSample.MemUsed}}){{end}}
+        </dd>
+        <dt>Temperature</dt><dd>{{if .LastSample.HaveTemp}}{{.LastSample.Temp}}{{else}}—{{end}}</dd>
+        <dt>Sampled</dt><dd>{{.LastSample.At}} ({{.LastSample.Ago}})</dd>
+      </dl>
+      <p><a href="/admin/metrics.json">view 5-min history (JSON)</a></p>
+    </section>
+    {{end}}
+
+    {{if .Device.Network.PrimaryIP}}
+    <section>
+      <h2>Network</h2>
+      <dl>
+        <dt>Primary IP</dt><dd>{{.Device.Network.PrimaryIP}}</dd>
+        <dt>Interfaces</dt>
+        <dd>
+          <table>
+            <thead><tr><th>Name</th><th>MAC</th><th>Addresses</th></tr></thead>
+            <tbody>
+              {{range .Device.Network.Interfaces}}
+              <tr>
+                <td><code>{{.Name}}</code></td>
+                <td>{{.MAC}}</td>
+                <td>{{range .Addrs}}<code>{{.}}</code> {{end}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </dd>
+      </dl>
+    </section>
+    {{end}}
+
+    {{if .HasJetson}}
+    <section>
+      <h2>Jetson</h2>
+      <dl>
+        <dt>Model</dt><dd>{{.Device.Jetson.Model}}</dd>
+        <dt>JetPack</dt><dd>{{.Device.Jetson.Jetpack}}</dd>
+        <dt>L4T</dt><dd>{{.Device.Jetson.L4T}}</dd>
+        <dt>CUDA / cuDNN / TensorRT</dt>
+        <dd>
+          {{.Device.Jetson.CUDA}} /
+          {{.Device.Jetson.CUDNN}} /
+          {{.Device.Jetson.TensorRT}}
+        </dd>
+        <dt>Serial</dt><dd><code>{{.Device.Jetson.Serial}}</code></dd>
+      </dl>
+    </section>
+    {{end}}
+
+    <section>
+      <h2>Power audit (last 20)</h2>
+      {{if .AuditError}}
+        <p class="empty">Audit log unavailable: <code>{{.AuditError}}</code></p>
+      {{else}}
+        {{if not .Audit}}
+          <p class="empty">No power actions recorded yet.</p>
+        {{else}}
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Dry-run</th>
+                <th>Request ID</th>
+                <th>Remote</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Audit}}
+              <tr>
+                <td><span title="{{.AtRFC3339}}">{{.At}}</span></td>
+                <td>{{.Action}}</td>
+                <td>{{if .DryRun}}yes{{else}}no{{end}}</td>
+                <td>{{if .RequestID}}<code>{{.RequestID}}</code>{{else}}—{{end}}</td>
+                <td>{{.RemoteAddr}}</td>
+                <td><span class="result-{{.ResultClass}}">{{.Result}}</span></td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        {{end}}
+      {{end}}
+    </section>
+  </main>
+  <footer>
+    <p>spotterd admin · <a href="/api/v1/info">JSON view</a> · <a href="/api/v1/metrics/recent">metrics JSON</a> · <a href="/admin/static/style.css">CSS</a></p>
+  </footer>
+</body>
+</html>

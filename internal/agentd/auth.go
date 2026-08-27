@@ -7,11 +7,12 @@ import (
 )
 
 // authMiddleware guards "destructive" endpoints with a Bearer token
-// when AuthConfig.Enabled is true. Read-only paths (/healthz and
-// /api/v1/info) are exempt so legacy v0.x clients — which don't
-// know about tokens — can still discover devices and read the
-// auth-required flag from the response body. Reboot/shutdown/logs
-// are protected.
+// when AuthConfig.Enabled is true. Read-only paths (/healthz,
+// /api/v1/info, and /admin/*) are exempt so legacy v0.x clients
+// can still discover devices and operators can browse the admin
+// pages without a Bearer-capable browser extension. Reboot /
+// shutdown / logs are protected. Admin pages self-gate via Basic
+// auth (see admin.go) using the same token.
 func authMiddleware(next http.Handler, cfg AuthConfig, log *slog.Logger) http.Handler {
 	if !cfg.Enabled {
 		return next
@@ -21,7 +22,11 @@ func authMiddleware(next http.Handler, cfg AuthConfig, log *slog.Logger) http.Ha
 		// so v0.x clients continue to discover devices. The /info
 		// payload also surfaces auth.required so v0.3 clients know
 		// to prompt for a token before invoking write paths.
-		if r.URL.Path == "/healthz" || r.URL.Path == "/api/v1/info" {
+		// Admin pages self-gate with Basic auth and would
+		// otherwise double-prompt the operator.
+		if r.URL.Path == "/healthz" ||
+			r.URL.Path == "/api/v1/info" ||
+			strings.HasPrefix(r.URL.Path, "/admin") {
 			next.ServeHTTP(w, r)
 			return
 		}

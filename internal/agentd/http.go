@@ -43,6 +43,14 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/power/audit/recent", a.handlePowerAuditRecent)
 	mux.HandleFunc("POST /api/v1/power/cancel", a.handlePowerCancel)
 	mux.HandleFunc("GET /api/v1/metrics/recent", a.handleMetricsRecent)
+	// Read-only admin web surface. Static assets are
+	// embedded (no external CDN), so the binary stays
+	// self-contained. Auth is the same cfg.Auth token as
+	// the JSON API — see admin.go.
+	mux.HandleFunc("GET /admin", a.handleAdminIndex)
+	mux.HandleFunc("GET /admin/", a.handleAdminIndex)
+	mux.HandleFunc("GET /admin/static/", a.handleAdminStatic)
+	mux.HandleFunc("GET /admin/metrics.json", a.handleAdminMetricsJSON)
 	return a.recoverMiddleware(rateLimitMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger), a.powerLimiter()))
 }
 
