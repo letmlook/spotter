@@ -238,8 +238,8 @@ func TestPowerUnified_ImmediateExec(t *testing.T) {
 		t.Errorf("want 2 audit rows, got %d:\n%s", len(rows), audit)
 	}
 	for _, row := range rows {
-		if !strings.Contains(row, "result=scheduled") {
-			t.Errorf("audit row missing result: %q", row)
+		if !strings.Contains(row, "status=scheduled") {
+			t.Errorf("audit row missing status: %q", row)
 		}
 	}
 }
@@ -372,27 +372,146 @@ func TestPowerAuditGet_MethodNotAllowed(t *testing.T) {
 	}
 }
 
-// TestPowerCancel_NotImplemented — until v0.6 ships a pid-file
-// cancel API, the cancel endpoint returns 501 rather than the
-// previous fake-200 success.
-func TestPowerCancel_NotImplemented(t *testing.T) {
+// TestPowerCancel_Smoke — GET → 405 (mux rejection), POST with
+// empty request_id → 400 (handler rejection). The endpoint now
+// actually cancels; the previous 501 "not implemented" path is
+// gone. Real cancel coverage lives in TestPowerCancel_Success
+// and TestPowerCancel_UnknownID below.
+func TestPowerCancel_Smoke(t *testing.T) {
 	a := newPowerAgent(t, true)
 	ts := httptest.NewServer(a.Handler())
 	defer ts.Close()
 
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		req, _ := http.NewRequest(method, ts.URL+"/api/v1/power/cancel", nil)
+		var body io.Reader
+		if method == http.MethodPost {
+			body = strings.NewReader(`{"request_id":""}`)
+		}
+		req, _ := http.NewRequest(method, ts.URL+"/api/v1/power/cancel", body)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("%s: got %d, want 501 (body=%s)", method, resp.StatusCode, body)
+		if method == http.MethodGet && resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("GET: got %d, want 405", resp.StatusCode)
 		}
-		if !strings.Contains(string(body), "cancel not yet implemented") {
-			t.Errorf("%s: body=%q, want honest not-implemented message", method, body)
+		if method == http.MethodPost && resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("POST empty id: got %d, want 400", resp.StatusCode)
 		}
+	}
+}
+
+// TestPowerCancel_UnknownID — POST a request_id that has no
+// corresponding pending action. Must return 404, not 500 or 200.
+func TestPowerCancel_UnknownID(t *testing.T) {
+	a := newPowerAgent(t, true)
+	ts := httptest.NewServer(a.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/v1/power/cancel", "application/json",
+		strings.NewReader(`{"request_id":"never-registered"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got %d, want 404", resp.StatusCode)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "not_found" {
+		t.Errorf("status=%q, want not_found", body["status"])
+	}
+	if body["request_id"] != "never-registered" {
+		t.Errorf("echoed request_id=%q, want never-registered", body["request_id"])
+	}
+}
+
+// TestPowerCancel_Success — schedule a delayed action with a
+// request_id, then cancel it before the timer fires. The
+// underlying ExecSystemctl must NOT be invoked (we replace it
+// with a recorder that fails the test if called).
+func TestPowerCancel_Success(t *testing.T) {
+	a := newPowerAgent(t, true)
+	ts := httptest.NewServer(a.Handler())
+	defer ts.Close()
+
+	called := make(chan struct{}, 1)
+	prev := agentd.ExecSystemctl
+	agentd.ExecSystemctl = func(action string) error {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+		return nil
+	}
+	t.Cleanup(func() { agentd.ExecSystemctl = prev })
+
+	body := `{"action":"reboot","delay_minutes":120,"request_id":"cancel-me-1"}`
+	resp, err := http.Post(ts.URL+"/api/v1/power", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("dispatch: got %d, want 202", resp.StatusCode)
+	}
+	t.Logf("dispatch OK")
+
+	cancelResp, err := http.Post(ts.URL+"/api/v1/power/cancel", "application/json",
+		strings.NewReader(`{"request_id":"cancel-me-1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cancelBody map[string]string
+	if err := json.NewDecoder(cancelResp.Body).Decode(&cancelBody); err != nil {
+		t.Fatal(err)
+	}
+	cancelResp.Body.Close()
+	if cancelResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("cancel: got %d, want 202", cancelResp.StatusCode)
+	}
+	if cancelBody["status"] != "cancelled" {
+		t.Errorf("status=%q, want cancelled", cancelBody["status"])
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	resp2, err := http.Post(ts.URL+"/api/v1/power/cancel", "application/json",
+		strings.NewReader(`{"request_id":"cancel-me-1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("second cancel: got %d, want 404", resp2.StatusCode)
+	}
+
+	select {
+	case <-called:
+		t.Fatal("ExecSystemctl invoked after cancel; the timer should have been interrupted")
+	default:
+	}
+}
+
+// TestPowerCancel_DisabledWhenFeatureOff — with enable_power_actions
+// false, the cancel endpoint must return 403 just like the dispatch
+// endpoints, not silently succeed.
+func TestPowerCancel_DisabledWhenFeatureOff(t *testing.T) {
+	a := newPowerAgent(t, false)
+	ts := httptest.NewServer(a.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/v1/power/cancel", "application/json",
+		strings.NewReader(`{"request_id":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got %d, want 403", resp.StatusCode)
 	}
 }

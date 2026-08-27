@@ -1,14 +1,18 @@
 package agentd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +52,18 @@ type AuditLogger struct {
 	f    *os.File
 }
 
+// AuditEntry is one TSV line decoded back into a structured row.
+// The wire shape is what /api/v1/power/audit/recent returns to
+// the GUI; the file format stays TSV for grep-forwardability.
+type AuditEntry struct {
+	At         time.Time `json:"at"`
+	Action     string    `json:"action"`
+	DryRun     bool      `json:"dry_run"`
+	RequestID  string    `json:"request_id,omitempty"`
+	RemoteAddr string    `json:"remote_addr,omitempty"`
+	Result     string    `json:"result"`
+}
+
 func NewAuditLogger(path string) (*AuditLogger, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, err
@@ -72,17 +88,128 @@ func (a *AuditLogger) Close() error {
 	return nil
 }
 
-// Record writes a TSV line: timestamp, action, dry_run, request_id,
-// remote_ip, result.
+// Record writes a TSV line. Field order:
+// timestamp \t action \t dry_run=... \t req=... \t ip=... \t status=...
+//
+// The status field uses the same `key=value` shape as the other
+// metadata so the audit decoder can treat every column after the
+// first two as opaque key-value pairs; this keeps the format
+// forward-compatible (adding a new column is a parse change, not
+// a format change).
 func (a *AuditLogger) Record(action string, dryRun bool, requestID, remote, result string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.f == nil {
 		return
 	}
-	fmt.Fprintf(a.f, "%s\t%s\tdry_run=%v\treq=%s\tip=%s\tresult=%s\n",
+	fmt.Fprintf(a.f, "%s\t%s\tdry_run=%v\treq=%s\tip=%s\tstatus=%s\n",
 		timefmt.NowUTC(),
 		action, dryRun, requestID, remote, result)
+}
+
+// Recent returns the last n audit entries, oldest first. The
+// function reads the file tail with a small overshoot so we
+// don't have to seek-line-counted from byte 0 on a long-running
+// log. Implementation: scan the file once into a ring of size n
+// and return the ring in chronological order.
+func (a *AuditLogger) Recent(n int) ([]AuditEntry, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.f == nil {
+		return nil, nil
+	}
+	// Read all entries by rewinding and scanning. The file is
+	// append-only and small (a few KB per day on most fleets),
+	// so reading it whole is cheaper than maintaining a
+	// cursor. For very long-running deployments a future
+	// optimisation is to read backwards in 4KB chunks and
+	// stop at n newline boundaries.
+	if _, err := a.f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	dec := newAuditDecoder(a.f)
+	all := make([]AuditEntry, 0, n)
+	for {
+		entry, err := dec.decode()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			// A single malformed line shouldn't sink the
+			// whole response; skip and continue.
+			continue
+		}
+		if len(all) < n {
+			all = append(all, entry)
+		} else {
+			// Shift left and append — cheaper than a ring
+			// because n is small (≤100 in practice).
+			copy(all, all[1:])
+			all[len(all)-1] = entry
+		}
+	}
+	return all, nil
+}
+
+// auditDecoder splits the TSV format into AuditEntry rows.
+// Field order matches Record(): timestamp, action, dry_run=...,
+// req=..., ip=..., result=...
+type auditDecoder struct {
+	sc *bufio.Scanner
+}
+
+func newAuditDecoder(r io.Reader) *auditDecoder {
+	sc := bufio.NewScanner(r)
+	// 1MB max line; we never write lines that long but a
+	// truncated tail from a power cut shouldn't crash the
+	// decoder.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	return &auditDecoder{sc: sc}
+}
+
+func (d *auditDecoder) decode() (AuditEntry, error) {
+	if !d.sc.Scan() {
+		if err := d.sc.Err(); err != nil {
+			return AuditEntry{}, err
+		}
+		return AuditEntry{}, io.EOF
+	}
+	line := d.sc.Text()
+	if line == "" {
+		return AuditEntry{}, io.EOF // skip blanks; treat as EOF
+	}
+	fields := strings.SplitN(line, "\t", 6)
+	if len(fields) < 6 {
+		return AuditEntry{}, fmt.Errorf("audit: short line %q", line)
+	}
+	entry := AuditEntry{Action: fields[1]}
+	if t, err := time.Parse(time.RFC3339Nano, fields[0]); err == nil {
+		entry.At = t
+	}
+	// Fields 2..5 are all `key=value` pairs: dry_run=, req=,
+	// ip=, status=. Decode them uniformly so a future column
+	// addition (e.g. duration=) is a one-line change to this
+	// switch.
+	for _, kv := range fields[2:6] {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "dry_run":
+			entry.DryRun = v == "true"
+		case "req":
+			entry.RequestID = v
+		case "ip":
+			entry.RemoteAddr = v
+		case "status":
+			entry.Result = v
+		}
+	}
+	return entry, nil
 }
 
 // handlePowerDispatch was removed when /api/v1/power split into
@@ -90,6 +217,38 @@ func (a *AuditLogger) Record(action string, dryRun bool, requestID, remote, resu
 // for the audit log). The mux in Handler() now matches method +
 // path separately, and a 405 falls out automatically when neither
 // pattern matches.
+
+// handlePowerAuditRecent returns the last N audit entries as a
+// JSON array (vs handlePowerAuditGet's NDJSON stream over the
+// whole file). `limit` defaults to 50 and is capped at 200 so
+// the response stays under ~20 KiB even on chatty agents. Used
+// by the GUI to render a recent-activity list in the detail
+// panel.
+func (a *Agent) handlePowerAuditRecent(w http.ResponseWriter, r *http.Request) {
+	if a.audit == nil {
+		http.Error(w, "audit log unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	entries, err := a.audit.Recent(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"entries": entries,
+		"count":   len(entries),
+	})
+}
 
 func (a *Agent) handlePowerAuditGet(w http.ResponseWriter, _ *http.Request) {
 	if a.audit == nil {
@@ -116,6 +275,11 @@ func (a *Agent) handlePowerAuditGet(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+// handlePowerUnified accepts a power dispatch. Delayed actions
+// register a cancel channel keyed by request_id (when supplied)
+// so /api/v1/power/cancel can interrupt them. A missing
+// request_id on a delayed action is allowed but not cancellable
+// — callers that want cancellation must supply one.
 func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 	if !a.cfg.EnablePowerActions {
 		w.Header().Set("Content-Type", "application/json")
@@ -153,7 +317,31 @@ func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 		if req.DelayMinutes > 0 {
 			executeAt := time.Now().Add(time.Duration(req.DelayMinutes) * time.Minute)
 			resp.ExecuteAt = executeAt.UTC().Format(time.RFC3339)
-			go a.delayExec(r.Context(), req, r.RemoteAddr, executeAt)
+			cancelCh := a.registerPending(req.RequestID)
+			// Detach from r.Context(): net/http cancels the
+			// request context as soon as the handler returns,
+			// which would fire delayExec's ctx.Done branch
+			// immediately and unregister the pending action
+			// before the operator could cancel it. The agent
+			// lifecycle ctx is owned by cmd/agent (signal-driven)
+			// and is the right parent for long-running background
+			// work; threading it through here would require a
+			// wider refactor, so for now we use Background with
+			// the request's values (for logging/tracing) and a
+			// deadline that outlives the longest valid delay.
+			detached, detachedCancel := context.WithTimeout(
+				context.WithoutCancel(r.Context()),
+				time.Duration(req.DelayMinutes+5)*time.Minute,
+			)
+			// We don't need the cancel in the parent path (the
+			// detached ctx outlives the handler), but the
+			// returned cancel must run somewhere to free the
+			// context resources when the goroutine finishes.
+			// Hand it to delayExec via a closure.
+			go func() {
+				defer detachedCancel()
+				a.delayExec(detached, req, r.RemoteAddr, executeAt, cancelCh)
+			}()
 		} else {
 			if err := ExecSystemctl(req.Action); err != nil {
 				resp.Status = "error"
@@ -167,25 +355,75 @@ func (a *Agent) handlePowerUnified(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// delayExec sleeps until at, then runs ExecSystemctl. Honours ctx
-// cancellation — if the agent shuts down (or the request context
-// is cancelled) before the deadline, the goroutine exits without
-// invoking systemctl and without writing a delayed-executed audit
-// row.
-func (a *Agent) delayExec(ctx context.Context, req PowerRequest, remote string, at time.Time) {
+// delayExec sleeps until at, then runs ExecSystemctl. Three exit
+// paths: ctx cancelled (client disconnect or agent shutdown),
+// cancelCh closed (POST /api/v1/power/cancel), or timer fired.
+// Only the timer path actually runs systemctl; the other two
+// record "cancelled" in the audit log and return.
+func (a *Agent) delayExec(ctx context.Context, req PowerRequest, remote string, at time.Time, cancelCh <-chan struct{}) {
 	d := time.Until(at)
 	if d <= 0 {
 		d = time.Second
 	}
 	t := time.NewTimer(d)
 	defer t.Stop()
+	defer a.unregisterPending(req.RequestID)
 	select {
 	case <-ctx.Done():
+		if a.audit != nil {
+			a.audit.Record(req.Action, false, req.RequestID, remote, "cancelled")
+		}
+		return
+	case <-cancelCh:
+		if a.audit != nil {
+			a.audit.Record(req.Action, false, req.RequestID, remote, "cancelled")
+		}
 		return
 	case <-t.C:
 	}
 	_ = ExecSystemctl(req.Action)
 	if a.audit != nil {
 		a.audit.Record(req.Action, false, req.RequestID, remote, "delayed-executed")
+	}
+}
+
+// registerPending attaches a fresh cancel channel to the in-memory
+// pending map under requestID. A blank requestID is not
+// registered (cancellation requires a stable key). The returned
+// channel is closed by unregisterPending when delayExec returns
+// or by handlePowerCancel when the operator wants to abort early.
+// Safe to call when a.audit is nil — the field is only consulted
+// for logging, and the channel itself is independent of the audit
+// subsystem.
+func (a *Agent) registerPending(requestID string) chan struct{} {
+	if requestID == "" {
+		// Return a never-fired channel so delayExec's select
+		// statement doesn't have a nil case. The request is
+		// uncancellable but otherwise behaves normally.
+		return make(chan struct{})
+	}
+	a.pendingMu.Lock()
+	defer a.pendingMu.Unlock()
+	ch := make(chan struct{})
+	a.pending[requestID] = ch
+	return ch
+}
+
+func (a *Agent) unregisterPending(requestID string) {
+	if requestID == "" {
+		return
+	}
+	a.pendingMu.Lock()
+	defer a.pendingMu.Unlock()
+	if ch, ok := a.pending[requestID]; ok {
+		// Idempotent close so a delayed-executed path doesn't
+		// double-panic if cancel races with the timer.
+		select {
+		case <-ch:
+			// already closed
+		default:
+			close(ch)
+		}
+		delete(a.pending, requestID)
 	}
 }

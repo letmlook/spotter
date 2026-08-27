@@ -40,21 +40,65 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/logs", a.handleLogs)
 	mux.HandleFunc("POST /api/v1/power", a.handlePowerUnified)
 	mux.HandleFunc("GET /api/v1/power/audit", a.handlePowerAuditGet)
-	mux.HandleFunc("/api/v1/power/cancel", a.handlePowerCancel)
+	mux.HandleFunc("GET /api/v1/power/audit/recent", a.handlePowerAuditRecent)
+	mux.HandleFunc("POST /api/v1/power/cancel", a.handlePowerCancel)
+	mux.HandleFunc("GET /api/v1/metrics/recent", a.handleMetricsRecent)
 	return a.recoverMiddleware(rateLimitMiddleware(authMiddleware(mux, a.cfg.Auth, a.logger), a.powerLimiter()))
 }
 
-// handlePowerCancel terminates the most recent pending delayed
-// dispatch for this device. Until v0.6 ships a pid-file-backed
-// cancel API, the endpoint returns 501 Not Implemented rather
-// than the previous fake 200 success — the GUI's Cancel button
-// should now visibly no-op instead of silently lying.
-func (a *Agent) handlePowerCancel(w http.ResponseWriter, _ *http.Request) {
+// handlePowerCancel aborts a previously scheduled delayed power
+// action. The request body must include a `request_id` field
+// matching the one the dispatch endpoint was given. A blank or
+// missing request_id is a 400; a well-formed but unknown id is a
+// 404. On success the endpoint returns 202 with status
+// "cancelled" and the underlying delayExec goroutine exits
+// without invoking systemctl.
+func (a *Agent) handlePowerCancel(w http.ResponseWriter, r *http.Request) {
+	if !a.cfg.EnablePowerActions {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "power actions disabled"})
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.RequestID == "" {
+		http.Error(w, "request_id is required", http.StatusBadRequest)
+		return
+	}
+	a.pendingMu.Lock()
+	ch, ok := a.pending[body.RequestID]
+	if !ok {
+		a.pendingMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":      "no pending action with that request_id",
+			"status":     "not_found",
+			"request_id": body.RequestID,
+		})
+		return
+	}
+	// Close the channel under the lock so concurrent cancels
+	// don't both try to close; the second close would panic.
+	select {
+	case <-ch:
+		// already closed (e.g. delayExec returned and unregistered)
+	default:
+		close(ch)
+	}
+	a.pendingMu.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error":  "cancel not yet implemented",
-		"status": "would_cancel",
+		"status":     "cancelled",
+		"request_id": body.RequestID,
 	})
 }
 
@@ -247,7 +291,24 @@ func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if unit == "" {
 		unit = protocol.DefaultLogUnit
 	}
+	// Compose the unit list: ?unit=foo,bar is added in front of
+	// the default so an operator who only sets ?unit=nginx still
+	// gets nginx (and not the agent's own log appended to it).
+	units := splitUnits(r.URL.Query().Get("unit"))
+	if len(units) == 0 {
+		units = []string{unit}
+	} else {
+		units = append([]string{unit}, units...)
+	}
 	tail := parseLogTail(r.URL.Query().Get("tail"), defaultLogTail)
+	q := r.URL.Query()
+	opts := JournalctlOpts{
+		Units:    units,
+		Tail:     tail,
+		Grep:     q.Get("grep"),
+		Since:    q.Get("since"),
+		Priority: q.Get("priority"),
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -260,7 +321,7 @@ func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	rc, kill, err := startJournalctl(r.Context(), unit, tail)
+	rc, kill, err := startJournalctl(r.Context(), opts)
 	if err != nil {
 		a.logger.Error("start journalctl",
 			slog.String("unit", unit),

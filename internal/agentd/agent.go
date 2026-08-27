@@ -87,6 +87,30 @@ type Agent struct {
 	// the cmd/agent setup path.
 	audit *AuditLogger
 
+	// pending tracks in-flight delayed power actions so the
+	// /api/v1/power/cancel endpoint can abort them. The map is
+	// keyed by request_id; entries are removed when delayExec
+	// returns (timer fired or context cancelled) or when cancel
+	// closes the channel. Memory only — a fresh agent process
+	// after a restart has no record of scheduled actions
+	// scheduled in the previous run, so cancel across restarts
+	// returns 404. That's acceptable: the GUI optimistically
+	// shows "cancelled" on a 404 too, and the worst case is one
+	// reboot slipping through.
+	pending    map[string]chan struct{}
+	pendingMu  sync.Mutex
+
+	// metrics is the rolling 5-minute history of CPU / memory /
+	// temperature samples. Populated by initMetrics() from
+	// runAgent; the sampler runs as a goroutine bound to the
+	// agent's lifecycle context. nil until initMetrics runs.
+	metrics *MetricsHistory
+
+	// lifecycleCtx is set by SetLifecycleContext (cmd/agent
+	// owns the long-lived ctx). The metrics sampler and other
+	// background goroutines watch it for clean shutdown.
+	lifecycleCtx context.Context
+
 	// srv is the http.Server created lazily by StartHTTP.
 	// Held here so Close() can call Shutdown(ctx) without
 	// callers having to track the server themselves.
@@ -105,11 +129,16 @@ func New(cfg Config, logger *slog.Logger) (*Agent, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Agent{cfg: cfg, logger: logger, info: protocol.DeviceInfo{
-		SchemaVersion: protocol.SchemaVersion,
-		DeviceID:      cfg.DeviceID,
-		AgentVersion:  cfg.AgentVersion,
-	}}, nil
+	return &Agent{
+		cfg:    cfg,
+		logger: logger,
+		info: protocol.DeviceInfo{
+			SchemaVersion: protocol.SchemaVersion,
+			DeviceID:      cfg.DeviceID,
+			AgentVersion:  cfg.AgentVersion,
+		},
+		pending: make(map[string]chan struct{}),
+	}, nil
 }
 
 // Config returns the agent's configuration.
@@ -117,6 +146,19 @@ func (a *Agent) Config() Config { return a.cfg }
 
 // Logger returns the agent's logger.
 func (a *Agent) Logger() *slog.Logger { return a.logger }
+
+// PendingCount exposes the size of the in-memory pending-action
+// map for tests. Returns -1 if the map is not initialised (e.g.
+// when an Agent is built outside New without going through the
+// constructor that allocates the map).
+func (a *Agent) PendingCount() int {
+	a.pendingMu.Lock()
+	defer a.pendingMu.Unlock()
+	if a.pending == nil {
+		return -1
+	}
+	return len(a.pending)
+}
 
 // SetInfo atomically replaces the cached DeviceInfo.
 func (a *Agent) SetInfo(info protocol.DeviceInfo) {
@@ -152,6 +194,16 @@ func (a *Agent) Info() protocol.DeviceInfo {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.info
+}
+
+// SetLifecycleContext hands the agent the long-lived context
+// that should drive its background goroutines (metrics sampler,
+// UDP loop, etc). Set this once at startup; the same ctx is
+// passed to the metrics sampler so SIGTERM-driven shutdown
+// tears down the loop cleanly.
+func (a *Agent) SetLifecycleContext(ctx context.Context) {
+	a.lifecycleCtx = ctx
+	a.initMetrics()
 }
 
 // SetHTTPServer is called once by StartHTTP to record the
