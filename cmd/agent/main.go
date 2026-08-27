@@ -124,6 +124,11 @@ func runAgent(configPath string, log *slog.Logger) int {
 		log.Error("start", slog.String("err", err.Error()))
 		return 1
 	}
+	// Hand the agent the lifecycle ctx so background goroutines
+	// (metrics sampler, UDP hello loop) can watch for shutdown.
+	// Must run after Start so the lifecycle context is wired
+	// before the sampler goroutine is launched.
+	agent.SetLifecycleContext(ctx)
 	announceMDNS(ctx, log, cfg.DeviceID, cfg.ListenAddr)
 	log.Info("agent stopped")
 	return 0
