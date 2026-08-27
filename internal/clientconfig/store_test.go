@@ -4,9 +4,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// uuidV4Pattern matches the canonical 8-4-4-4-12 hex shape with a
+// "4" version nibble in the third group, which is what
+// uuid.NewString emits. We only assert the shape, not the variant
+// nibble, because we trust google/uuid's generator.
+var uuidV4Pattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func TestStore_OpenMissing(t *testing.T) {
 	dir := t.TempDir()
@@ -130,5 +137,66 @@ func TestSettings_MarshalsAndUnmarshals(t *testing.T) {
 	}
 	if out != in {
 		t.Errorf("round-trip mismatch:\nin:  %+v\nout: %+v", in, out)
+	}
+}
+
+func TestStore_ClientID_Generated(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get().ClientID
+	if got == "" {
+		t.Fatal("ClientID is empty on first Open; want a UUID v4")
+	}
+	if !uuidV4Pattern.MatchString(got) {
+		t.Errorf("ClientID %q is not a UUID v4", got)
+	}
+}
+
+func TestStore_ClientID_PersistsAcrossOpens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1 := first.Get().ClientID
+	if id1 == "" {
+		t.Fatal("first Open did not generate ClientID")
+	}
+	// Reopen the same file. Identity must survive — the UUID is
+	// what agents use to recognise "the same client" across
+	// reconnects, so re-rolling it on every launch would break
+	// that contract.
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Get().ClientID; got != id1 {
+		t.Errorf("ClientID changed across Open: %q -> %q", id1, got)
+	}
+}
+
+func TestStore_ClientID_NotOverwrittenBySet(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := Open(filepath.Join(dir, "settings.json"))
+	original := store.Get().ClientID
+	if err := store.Set(Settings{Theme: "dark"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Get().ClientID; got != original {
+		t.Errorf("Set cleared ClientID: %q -> %q", original, got)
+	}
+}
+
+func TestStore_ClientID_DistinctBetweenTwoOpens(t *testing.T) {
+	// Two Open() calls on two different paths must produce two
+	// different UUIDs — otherwise the identity is meaningless.
+	a, _ := Open(filepath.Join(t.TempDir(), "a.json"))
+	b, _ := Open(filepath.Join(t.TempDir(), "b.json"))
+	if a.Get().ClientID == b.Get().ClientID {
+		t.Errorf("two stores got identical ClientID %q; expected distinct", a.Get().ClientID)
 	}
 }

@@ -195,6 +195,31 @@ type registryApp struct {
 }
 
 func (r *registryApp) List() []registry.Entry { return r.reg.List() }
+
+// GetPowerAuditRecent proxies the agent's /api/v1/power/audit/recent
+// endpoint so the GUI can render a "recent activity" timeline in
+// the detail panel. The scanner fans the call out to the device
+// because the audit log lives on the agent, not the client. If
+// the device is offline or the agent's audit logger isn't
+// enabled, the scanner returns a friendly empty list — the GUI
+// then renders "no recent activity" instead of a stack trace.
+func (r *registryApp) GetPowerAuditRecent(deviceID string, limit int) ([]map[string]any, error) {
+	entry, ok := r.reg.Get(deviceID)
+	if !ok {
+		return nil, fmt.Errorf("device not found: %s", deviceID)
+	}
+	if !entry.Online {
+		return []map[string]any{}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	raw, err := r.scanner.FetchPowerAuditRecent(ctx, entry.IP, entry.Port, limit)
+	if err != nil {
+		r.logger.Debug("fetch power audit", slog.String("device", deviceID), slog.String("err", err.Error()))
+		return []map[string]any{}, nil
+	}
+	return raw, nil
+}
 func (r *registryApp) Clear() (int, error) {
 	entries := r.reg.List()
 	for _, e := range entries {
@@ -518,6 +543,7 @@ func NewApp(reg *registry.Registry, settings *clientconfig.Store, logger *slog.L
 		scanner.WithOnEvent(app.onScannerEvent),
 		scanner.WithMulticastGroup(s.MulticastGroup),
 		scanner.WithDevicePort(s.DevicePort),
+		scanner.WithClientSenderID(s.ClientID),
 	}
 	if s.AuthToken != "" {
 		opts = append(opts, scanner.WithAuthToken(s.AuthToken))

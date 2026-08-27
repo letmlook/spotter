@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/spotter/spotter/internal/jsonstore"
 	"github.com/spotter/spotter/internal/protocol"
 )
@@ -52,10 +54,19 @@ type Settings struct {
 	// segments) do not get unsolicited traffic. The UI exposes a
 	// checkbox so operators can opt in.
 	EnableMDNS bool `json:"enable_mdns,omitempty"`
+	// ClientID is a UUID v4 stamped on every UDP HELLO and HTTP
+	// header so an agent can identify a specific client across
+	// reconnects. Generated once on first Open and persisted
+	// alongside the other settings; it is intentionally NOT
+	// re-generated on Update so the same physical client keeps
+	// the same identity across restarts.
+	ClientID string `json:"client_id,omitempty"`
 }
 
 // defaultSettings returns the zero-config Settings as if none had
-// been written yet.
+// been written yet. ClientID is generated as a fresh UUID v4 —
+// callers must NOT share the returned Settings across stores; the
+// UUID is meant to identify the *local* client, not the file.
 func defaultSettings() Settings {
 	return Settings{
 		MulticastGroup: DefaultMulticastGroup,
@@ -66,6 +77,7 @@ func defaultSettings() Settings {
 		McastInterval:  DefaultMcastInterval,
 		Theme:          "system",
 		Language:       "zh-CN",
+		ClientID:       uuid.NewString(),
 	}
 }
 
@@ -76,17 +88,29 @@ type Store struct {
 	s    Settings
 }
 
-// Open loads (or initialises) a settings file at path.
+// Open loads (or initialises) a settings file at path. The first
+// launch — file missing or empty — flushes the generated defaults
+// (including a fresh ClientID UUID v4) so subsequent Opens see the
+// same identity, and a corrupt file is renamed aside and replaced
+// with the same defaults. This is the only path that allocates a
+// new ClientID; Set/Update preserve whatever is already in the
+// store so a user's sender identity survives Settings writes.
 func Open(path string) (*Store, error) {
 	store := &Store{path: path, s: defaultSettings()}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			if err := store.flushLocked(); err != nil {
+				return nil, fmt.Errorf("write initial %s: %w", path, err)
+			}
 			return store, nil
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	if len(data) == 0 {
+		if err := store.flushLocked(); err != nil {
+			return nil, fmt.Errorf("write initial %s: %w", path, err)
+		}
 		return store, nil
 	}
 	if err := json.Unmarshal(data, &store.s); err != nil {
@@ -95,6 +119,9 @@ func Open(path string) (*Store, error) {
 		backup := fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixNano())
 		_ = os.Rename(path, backup)
 		store.s = defaultSettings()
+		if err := store.flushLocked(); err != nil {
+			return nil, fmt.Errorf("write post-recovery %s: %w", path, err)
+		}
 		return store, nil
 	}
 	// Apply defaults for any unset field.
@@ -110,10 +137,16 @@ func (s *Store) Get() Settings {
 }
 
 // Set replaces settings entirely, fills defaults for unset fields,
-// and flushes to disk.
+// and flushes to disk. The ClientID is treated as a sticky
+// identity: if the caller passes an empty string (the normal UI
+// path, which never touches the field) the existing in-memory
+// ClientID is preserved. Pass an explicit value to rotate it.
 func (s *Store) Set(in Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if in.ClientID == "" {
+		in.ClientID = s.s.ClientID
+	}
 	s.s = in
 	s.fillDefaultsLocked()
 	return s.flushLocked()
@@ -164,6 +197,12 @@ func (s *Store) fillDefaultsLocked() {
 	if s.s.Language == "" {
 		s.s.Language = d.Language
 	}
+	// ClientID is intentionally NOT filled here. A sticky identity
+	// is allocated in `defaultSettings` and persisted on the first
+	// Open; Set/Update preserve whatever the caller handed in.
+	// Filling from a fresh `defaultSettings()` here would rotate
+	// the UUID on every Settings write and break agent-side
+	// correlation across reconnects.
 }
 
 func (s *Store) flushLocked() error {

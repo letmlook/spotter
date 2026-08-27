@@ -5,11 +5,13 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -141,6 +143,11 @@ func (o Options) withDefaults() Options {
 		o.DevicePort = protocol.DefaultDevicePort
 	}
 	if o.ClientSenderID == "" {
+		// Last-resort fallback for callers that build a Scanner
+		// without a settings-backed identity (e.g. spotter-cli
+		// smoke tests, ad-hoc probes). The GUI path always sets
+		// this via WithClientSenderID(settings.ClientID), so
+		// end-users never see this branch.
 		o.ClientSenderID = "spotter-client"
 	}
 	return o
@@ -159,6 +166,16 @@ func WithMulticastGroup(group string) func(*Options) {
 // WithDevicePort overrides the default 9999.
 func WithDevicePort(port int) func(*Options) {
 	return func(o *Options) { o.DevicePort = port }
+}
+
+// WithClientSenderID stamps every outbound HELLO and X-Spotter-Client
+// header with the supplied identifier. Callers are expected to pass a
+// stable UUID v4 (see internal/clientconfig.Settings.ClientID) so
+// agents can attribute HELLO bursts to the same client across
+// reconnects. An empty value is allowed and the scanner will fall
+// back to a generic placeholder — see Options.applyDefaults.
+func WithClientSenderID(id string) func(*Options) {
+	return func(o *Options) { o.ClientSenderID = id }
 }
 
 // WithHTTPClient overrides the default HTTP client (used by Scanner.RebootDevice etc.).
@@ -315,6 +332,48 @@ func (s *Scanner) RebootDevice(ctx context.Context, ip string, port int) error {
 // ShutdownDevice POSTs to /api/v1/shutdown. Same semantics as RebootDevice.
 func (s *Scanner) ShutdownDevice(ctx context.Context, ip string, port int) error {
 	return s.postPowerAction(ctx, ip, port, "shutdown")
+}
+
+// FetchPowerAuditRecent pulls /api/v1/power/audit/recent?limit=N
+// from a device. The endpoint is a small JSON object
+// `{entries: [...], count: N}`; we forward `entries` to the
+// GUI as []map[string]any so wailsjs can decode it without a
+// pre-generated model. Network / non-2xx errors propagate to
+// the caller; the Wails layer above maps them to a friendly
+// empty list.
+func (s *Scanner) FetchPowerAuditRecent(ctx context.Context, ip string, port int, limit int) ([]map[string]any, error) {
+	target := fmt.Sprintf("http://%s:%d/api/v1/power/audit/recent", ip, port)
+	if limit > 0 {
+		target += "?limit=" + strconv.Itoa(limit)
+	}
+	req, err := s.newRequest(ctx, http.MethodGet, target)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.opts.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		// Agent's audit logger is nil — return empty, not error,
+		// so the GUI renders "audit unavailable" gracefully.
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("audit recent: %s", resp.Status)
+	}
+	var body struct {
+		Entries []map[string]any `json:"entries"`
+		Count   int              `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode audit: %w", err)
+	}
+	if body.Entries == nil {
+		return []map[string]any{}, nil
+	}
+	return body.Entries, nil
 }
 
 func (s *Scanner) postPowerAction(ctx context.Context, ip string, port int, action string) error {
