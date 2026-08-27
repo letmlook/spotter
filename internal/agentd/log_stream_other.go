@@ -12,7 +12,8 @@ import (
 // (see cmd/agent/main.go's //go:build linux), so requests reaching this
 // stub indicate a build misconfiguration. Defined here so the package
 // compiles on macOS/Windows for local test runs of cross-platform
-// helpers.
-var startJournalctl = func(_ context.Context, _ string, _ int) (io.ReadCloser, func(), error) {
+// helpers. The signature mirrors the Linux version (accepts
+// JournalctlOpts) so the handler compiles unchanged across platforms.
+var startJournalctl = func(_ context.Context, _ JournalctlOpts) (io.ReadCloser, func(), error) {
 	return nil, nil, errors.New("journalctl only available on linux")
 }

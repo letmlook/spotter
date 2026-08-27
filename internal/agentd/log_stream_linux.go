@@ -14,11 +14,29 @@ import (
 // ReadCloser of its stdout plus a kill callback. Returns an error
 // when journalctl is missing or fails to start. The package-level
 // variable is overridable in tests.
-var startJournalctl = func(ctx context.Context, unit string, tail int) (io.ReadCloser, func(), error) {
+var startJournalctl = func(ctx context.Context, opts JournalctlOpts) (io.ReadCloser, func(), error) {
 	if _, err := exec.LookPath("journalctl"); err != nil {
 		return nil, nil, err
 	}
-	args := []string{"-u", unit, "--no-pager", "--output=json", "-n", strconv.Itoa(tail), "-f"}
+	args := []string{"--no-pager", "--output=json", "-f"}
+	for _, u := range opts.Units {
+		if u == "" {
+			continue
+		}
+		args = append(args, "-u", u)
+	}
+	if opts.Tail > 0 {
+		args = append(args, "-n", strconv.Itoa(opts.Tail))
+	}
+	if opts.Grep != "" {
+		args = append(args, "--grep", opts.Grep)
+	}
+	if opts.Since != "" {
+		args = append(args, "--since", opts.Since)
+	}
+	if opts.Priority != "" {
+		args = append(args, "--priority", opts.Priority)
+	}
 	cmd := exec.CommandContext(ctx, "journalctl", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
