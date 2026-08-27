@@ -4,6 +4,7 @@ import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import DetailPanel from './components/DetailPanel';
 import StatusBar from './components/StatusBar';
+import AlertBanner from './components/AlertBanner';
 import DeviceSetupGuide from './components/DeviceSetupGuide';
 import AddDeviceByIPDialog from './components/AddDeviceByIPDialog';
 import AboutDialog from './components/AboutDialog';
@@ -57,6 +58,7 @@ function AppInner() {
     >
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-main)' }}>
         <TitleBar />
+        <AlertBanner />
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <Sidebar />
           <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-main)' }}>
