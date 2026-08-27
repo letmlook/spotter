@@ -23,7 +23,7 @@
 - **Spec 来源**：[spotter-design.md:56](../specs/2026-08-21-spotter-design.md) §"Discovery cadence"
 - **现实**：自 0.1.1 起，client poll 调到 5s，agent HELLO 调到 5s，mcast listen 调到 5s。
 - **原因**：30s 太长，UI 上 online/offline 转换肉眼可见；5s 与心跳对齐。`api.md:197`、`operations.md:54`、`README.md` 都已声明 5s。
-- **处理**：spec §"Discovery cadence" 章节更新并加上 PR #XXX 链接。
+- **处理**：spec §"Discovery cadence" 章节更新，落地于 commit [0674e98](https://github.com/spotter/spotter/commit/0674e98)（`feat(agent): agent 周期 HELLO + client 加快检测 (5s)`）。
 
 ### DEVIATION-004 跨平台（macOS / Linux）从非目标移入目标
 

@@ -80,5 +80,3 @@ heartbeats (
 | 持久化 | JSON（PoC） | SQLite WAL（更可靠） |
 | 部署形态 | 单 binary | Docker compose + caddy |
 | API 形态 | REST + WS | gRPC streaming |
-
-详见 `2026-XX-XX-registry-server-plan.md`。

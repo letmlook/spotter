@@ -129,7 +129,7 @@ client 应当同步升级：
 1. 打 release tag（`git tag v0.2.0`）。
 2. GitHub Actions release workflow 自动构建 Linux arm64/amd64 二进制。
 3. 用 `scripts/deploy.sh` 逐台设备推送新二进制。
-4. 更新 client（自动更新还没做 —— 用户从 GitHub Release 下载新版本）。
+4. 更新 client。客户端自更新计划在 v1.1（需要 codesign 链）才落地；当前用户从 GitHub Release 下载新版二进制手动替换。
 
 对多 VLAN 部署，按 (3) 一台台推，把爆炸半径压到最小。
 

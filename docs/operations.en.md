@@ -138,8 +138,9 @@ wire protocol. Plan device upgrades in lockstep with the client:
 1. Cut a release tag (`git tag v0.2.0`).
 2. The GitHub Actions release workflow builds Linux arm64/amd64 binaries.
 3. Re-run `scripts/deploy.sh` against each device to push the new binary.
-4. Update the client (the auto-update story is not implemented — users
-   grab a binary from the GitHub release).
+4. Update the client. Self-update is not planned until v1.1 (requires a
+   codesign chain); for now, users grab the new binary from the GitHub
+   release and replace the running one manually.
 
 For multi-VLAN deployments, do (3) device-by-device to keep blast radius
 small.
