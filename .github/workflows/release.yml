@@ -228,21 +228,288 @@ jobs:
           bash -n scripts/install.sh
           bash -n scripts/update-homebrew-sha.sh
 
+      - name: Download client cross-compile artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/clients
+          pattern: spotter-client-darwin-*
+          merge-multiple: true
+      - name: Download windows client artefact
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/clients
+          name: spotter-client-windows-amd64
+      - name: Show artifact layout
+        run: find dist -maxdepth 4 -type f -print
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          # Walk every file (no subdir recursion — wails) and emit
+          # "<sha>  <relative-path>" lines.
+          sha256sum -- * 2>/dev/null > SHA256SUMS || true
+          # If for some reason there are nested dirs, do a full walk too.
+          find . -type f -not -name SHA256SUMS -exec sha256sum {} \; >> SHA256SUMS
+          sort -u SHA256SUMS -o SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Verify init scripts syntactically
+        run: |
+          bash -n scripts/init/openrc/spotterd
+          bash -n scripts/init/runit/spotterd.run
+          bash -n scripts/install.sh
+          bash -n scripts/update-homebrew-sha.sh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           generate_release_notes: true
-          # Includes both the agent binaries (built by this workflow's
-          # `build` matrix) and the Linux client artifact produced by
-          # `client-linux`. macOS / Windows clients are still built
-          # manually on the matching OS host (see README "全平台打包")
-          # and uploaded as a follow-up release edit if needed.
+          # Pulls artefacts from:
+          #   - this workflow's `build` matrix (spotterd,
+          #     spotter-server, spotter-cli)
+          #   - `client-linux` (spotter-client linux/amd64 binary)
+          #   - `client-cross-compile.yml` (macOS .app tarball +
+          #     Windows .exe zip) — added in the D-2 cross-platform
+          #     CI matrix work.
           files: |
             dist/spotterd-linux-arm64
             dist/spotterd-linux-x64
             dist/spotter-server-linux-amd64
             dist/spotter-cli-linux-amd64
             dist/spotter-client-linux-amd64
+            dist/clients/spotter-client-darwin-amd64.tar.gz
+            dist/clients/spotter-client-darwin-arm64.tar.gz
+            dist/clients/spotter-client-windows-amd64.zip
             dist/SHA256SUMS
           fail_on_unmatched_files: false
+
+  # Sign every release artefact with sigstore cosign (keyless,
+  # OIDC-issued Fulcio certificate) and attach the bundles to the
+  # release alongside a SLSA provenance attestation. Outputs:
+  #   - dist/SHA256SUMS.sig  (cosign signature over SHA256SUMS)
+  #   - dist/SHA256SUMS.cosign  (cosign bundle JSON)
+  #   - dist/spotter-* + dist/clients/spotter-*  (each gets a .sig + .cosign sibling)
+  #   - dist/intoto.attestation.jsonl  (SLSA provenance)
+  #
+  # Without COSIGN_EXPERIMENTAL=1 the keyless flow uses the
+  # public-good Rekor (sigstore's transparency log) by default;
+  # for an enterprise deployment, set `rekor-url` + `tlog-upload`
+  # env vars in a custom `cosign` step.
+  sign:
+    name: cosign sign + SLSA provenance
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required for cosign to attach signatures via gh release
+      id-token: write  # required for keyless OIDC signing
+      packages: read   # SLSA generator may read package metadata
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Install cosign
+        # Use the official installer pinned to v2.4.x — sigstore
+        # ships tagged binaries and a `cosign-verify` companion
+        # that's stable across Go versions.
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Compute artefact digests
+        id: digests
+        working-directory: dist
+        run: |
+          # Emit "<sha256>  <basename>" lines, one per non-SHA256SUMS
+          # artefact. cosign signs by digest, so we want a stable
+          # list. The .cosign/.sig files written by later steps
+          # are excluded via the `find` predicate below.
+          : > /tmp/artefact-list.txt
+          find . -type f \
+            ! -name SHA256SUMS \
+            ! -name '*.cosign' \
+            ! -name '*.sig' \
+            ! -name 'intoto.*' \
+            -print | sort | while read -r f; do
+              sha="$(sha256sum "$f" | awk '{print $1}')"
+              printf '%s  %s\n' "$sha" "${f#./}" >> /tmp/artefact-list.txt
+            done
+          cat /tmp/artefact-list.txt
+
+      - name: Sign SHA256SUMS (keyless, OIDC)
+        working-directory: dist
+        # Keyless flow: cosign obtains a short-lived Fulcio cert
+        # via OIDC from the GitHub Actions runner, signs the
+        # digest, and uploads to Rekor. The result is a
+        # SHA256SUMS.sig + SHA256SUMS.cosign pair that consumers
+        # can verify with `cosign verify-blob` (no key material
+        # required on the verify side).
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign sign-blob \
+            --output-signature   SHA256SUMS.sig \
+            --output-certificate SHA256SUMS.pem \
+            --bundle             SHA256SUMS.cosign \
+            --yes \
+            SHA256SUMS
+
+      - name: Sign every binary (keyless, OIDC)
+        working-directory: dist
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          # Walk the digests list and sign each file. cosign
+          # sign-blob takes a file path; we sign the file
+          # itself, not its digest, so verification needs the
+          # file present. The resulting .sig + .cosign pair
+          # lives next to each binary.
+          while IFS= read -r line; do
+            sha="$(echo "$line" | awk '{print $1}')"
+            f="$(echo "$line" | awk '{print $2}')"
+            [ -z "$f" ] && continue
+            cosign sign-blob \
+              --output-signature   "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              --bundle             "${f}.cosign" \
+              --yes \
+              "$f"
+            echo "signed $f (sha256=$sha)"
+          done < /tmp/artefact-list.txt
+
+      - name: Generate SLSA provenance
+        id: slsa
+        uses: slsa-framework/slsa-github-generator@v2
+        with:
+          # The generator runs the same Go module's `go build` to
+          # produce a provenance that cryptographically attests
+          # "this binary was built from this source tree by this
+          # GitHub Actions run". Consumers verify with `slsa-verifier`.
+          base64-subjects: ${{ steps.digests.outputs.digests }}
+        env:
+          # OIDC token for the keyless SLSA signing step inside
+          # the generator (the same id-token permission above is
+          # forwarded).
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-attach signed artefacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/SHA256SUMS
+            dist/SHA256SUMS.sig
+            dist/SHA256SUMS.cosign
+            dist/SHA256SUMS.pem
+        # The signed binary bundles are picked up via a second
+        # job to avoid action-gh-release ordering issues.
+        fail_on_unmatched_files: false
+        # Overwrite=false so the existing release from the
+        # earlier `release` job is augmented, not replaced.
+
+  sign-attach:
+    name: cosign signatures attach
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [sign]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach .sig + .cosign + .pem siblings
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          # Wildcard glob picks up every *.sig / *.cosign / *.pem
+          # the previous job produced. softprops' action uploads
+          # them as separate release assets.
+          files: |
+            dist/**/*.sig
+            dist/**/*.cosign
+            dist/**/*.pem
+          fail_on_unmatched_files: false
+
+  # Push a PR to spotter/homebrew-tap bumping the `url` + `sha256`
+  # in Formula/spotter.rb. The tap repo is separate so this needs
+  # HOMEBREW_TAP_TOKEN (a PAT with `repo` scope on the tap repo).
+  # Without that secret the job silently no-ops; the operator can
+  # then run scripts/update-homebrew-sha.sh locally and open a PR
+  # by hand.
+  homebrew-tap:
+    name: bump homebrew-tap formula
+    if: github.event_name == 'push'
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if HOMEBREW_TAP_TOKEN is not configured
+        id: gate
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set; skipping auto-bump"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute new sha256
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${TAG}.tar.gz"
+          echo "Fetching $URL" >&2
+          curl -fsSL "$URL" -o /tmp/src.tgz
+          NEW_SHA="$(sha256sum /tmp/src.tgz | awk '{print $1}')"
+          echo "NEW_SHA=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR against spotter/homebrew-tap
+        if: steps.gate.outputs.skip != 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: spotter/homebrew-tap
+          branch: bump-spotter-${{ github.ref_name }}
+          title: "spotter ${{ github.ref_name }}"
+          body: |
+            Auto-bumped by the spotter release workflow.
+
+            - url: ${{ github.ref_name }}
+            - sha256: ${{ steps.sha.outputs.NEW_SHA }}
+
+            `brew install spotter/tap/spotter` will install this version after merge.
+          add-paths: |
+            Formula/spotter.rb
+          commit-message: "spotter ${{ github.ref_name }}"
+
+      - name: Apply url + sha256 patch
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          NEW_SHA="${{ steps.sha.outputs.NEW_SHA }}"
+          # Local Formula/spotter.rb mirror of the tap file. The
+          # create-pull-request action commits the local working
+          # tree, so we materialise the new contents here.
+          mkdir -p Formula
+          cp scripts/packages/homebrew/spotter.rb Formula/spotter.rb
+          sed -i.bak -E "s|url \"https://github.com/spotter/spotter/archive/refs/tags/.*\"|url \"https://github.com/spotter/spotter/archive/refs/tags/${TAG}.tar.gz\"|" Formula/spotter.rb
+          sed -i.bak -E "s|sha256 \"[0-9a-f]{64}\"|sha256 \"${NEW_SHA}\"|" Formula/spotter.rb
+          rm -f Formula/spotter.rb.bak
+          cat Formula/spotter.rb

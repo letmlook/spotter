@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Modal, Form, Input, InputNumber, Select, message, Button, Space } from 'antd';
+import { Modal, Form, Input, InputNumber, Select, Switch, message, Button, Space, Tooltip } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useI18n } from '../state/I18nContext';
 import { Get as GetSettings, Set as SetSettings } from '../../wailsjs/go/main/SettingsApp';
 
@@ -13,6 +14,7 @@ interface SettingsShape {
   theme?: string;
   language?: string;
   auth_token?: string;
+  enable_mdns?: boolean;
 }
 
 interface Props {
@@ -47,6 +49,7 @@ export default function SettingsDialog({ open, onClose }: Props) {
           theme: v.theme ?? 'system',
           language: v.language ?? 'zh-CN',
           auth_token: v.auth_token ?? '',
+          enable_mdns: v.enable_mdns ?? false,
         });
       })
       .catch((err: unknown) => {
@@ -134,6 +137,20 @@ export default function SettingsDialog({ open, onClose }: Props) {
           </Form.Item>
           <Form.Item name="auth_token" label={t('settings.field.authToken')} help={t('settings.field.authToken.help')}>
             <Input.Password autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            name="enable_mdns"
+            label={
+              <Space size={4}>
+                <span>{t('settings.field.enableMdns')}</span>
+                <Tooltip title={t('settings.field.enableMdns.help')}>
+                  <InfoCircleOutlined style={{ color: 'var(--text-secondary)' }} />
+                </Tooltip>
+              </Space>
+            }
+            valuePropName="checked"
+          >
+            <Switch />
           </Form.Item>
         </Form>
       )}

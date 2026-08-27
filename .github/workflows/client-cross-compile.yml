@@ -1,0 +1,196 @@
+name: Client cross-compile
+
+# Build spotter-client for darwin/{amd64,arm64} and windows/amd64 on
+# the matching host runners. We don't use Linux cross-compile here
+# because the linux client is already produced by release.yml's
+# `client-linux` job (which uses webkit2gtk-4.1 build tags).
+#
+# Each matrix entry is a self-contained build: it sets up Go + Node,
+# installs Wails, runs the same frontend build as the local developer
+# flow, and finally `wails build -platform ${{ matrix.platform }}`.
+# The `-sri` flag and `-clean` ensure a fresh `build/bin/`.
+#
+# Artifacts are uploaded under stable names so release.yml can pick
+# them up via `actions/download-artifact` and attach them to the
+# GitHub Release. macOS builds additionally produce a tar.gz of
+# the .app bundle (the release attaches the tarball, not the loose
+# .app, so users get a single download artefact).
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: client-cross-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: spotter-client (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: darwin-amd64
+            label: darwin/amd64
+            runs-on: macos-13
+            platform: darwin/amd64
+            archive: tarball
+          - id: darwin-arm64
+            label: darwin/arm64
+            runs-on: macos-14
+            platform: darwin/arm64
+            archive: tarball
+          - id: windows-amd64
+            label: windows/amd64
+            runs-on: windows-2022
+            platform: windows/amd64
+            archive: zip
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Wails CLI is a single Go binary; on macOS runners the
+      # `go install` from cmd/agent and the Wails install
+      # both use the same toolchain so GOPROXY env should
+      # match the agent-build workflow for consistency.
+      - name: Install Wails CLI
+        env:
+          GOPROXY: https://goproxy.cn,https://proxy.golang.org,direct
+        shell: bash
+        run: |
+          for i in 1 2 3 4; do
+            if go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0; then
+              break
+            fi
+            echo "go install wails: retry $i/4"
+            sleep 20
+          done
+          wails version
+
+      - name: Pre-build to populate go.sum
+        run: go mod tidy
+
+      - name: Stage empty frontend/dist for //go:embed
+        # `wails generate module` compiles main.go which embeds
+        # frontend/dist. We need *something* in there before the
+        # generate step is allowed to run.
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
+      - name: Generate Wails frontend bindings
+        shell: bash
+        run: wails generate module
+
+      - name: Build frontend
+        working-directory: frontend
+        shell: bash
+        run: |
+          npm ci --no-audit --fund=false
+          npm run build
+          rm -f frontend/dist/.gitkeep
+
+      - name: Build spotter-client (${{ matrix.label }})
+        # `-clean` clears build/bin between runs. macOS produces
+        # .app under build/bin/Spotter.app; Windows produces
+        # build/bin/spotter-client.exe.
+        shell: bash
+        run: |
+          wails build -clean -platform ${{ matrix.platform }} -o spotter-client
+          if [ "${{ matrix.runs-on }}" = "windows-2022" ]; then
+            chmod +x build/bin/spotter-client.exe || true
+          else
+            chmod -R +x build/bin/Spotter.app || true
+          fi
+
+      - name: Stage downloadable artefact
+        if: matrix.archive == 'tarball'
+        shell: bash
+        # macOS .app is a directory; users expect a single file to
+        # download. tar.gz gives them that without losing the bundle
+        # structure (DMG packaging is a follow-up — see
+        # docs/superpowers/specs/2026-08-27-v1.0-design.md).
+        run: |
+          cd build/bin
+          tar -czf ../../spotter-client-${{ matrix.label }}.tar.gz Spotter.app
+          cd ../..
+
+      - name: Sign + notarize (macOS)
+        if: matrix.archive == 'tarball' && env.APPLE_DEVELOPER_ID_APP != ''
+        env:
+          APP_BUNDLE: build/bin/Spotter.app
+          ARCH: ${{ matrix.id == 'darwin-amd64' && 'amd64' || 'arm64' }}
+          APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_DEVELOPER_IDENTITY_P12: ${{ secrets.APPLE_DEVELOPER_IDENTITY_P12 }}
+          APPLE_NOTARYTOOL_PROFILE: ${{ secrets.APPLE_NOTARYTOOL_PROFILE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        shell: bash
+        # Activates only when secrets are configured. The script
+        # bails early (exit 1) if any are missing; we set
+        # continue-on-error so a misconfigured secret doesn't
+        # break the rest of the matrix. The unsigned .app is
+        # still uploaded as a fallback so releases can ship.
+        continue-on-error: true
+        run: ./scripts/macos/sign-and-notarize.sh
+
+      - name: Build DMG
+        if: matrix.archive == 'tarball' && env.APPLE_DEVELOPER_ID_APP != ''
+        env:
+          APP_BUNDLE: build/bin/Spotter.app
+          ARCH: ${{ matrix.id == 'darwin-amd64' && 'amd64' || 'arm64' }}
+          OUTPUT_DIR: ${{ github.workspace }}
+          VERSION: ${{ github.ref_name }}
+          APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+        shell: bash
+        # Same fallback semantics as the sign step. Without
+        # create-dmg installed the script fails fast.
+        continue-on-error: true
+        run: |
+          if ! command -v create-dmg >/dev/null 2>&1; then
+            brew install create-dmg
+          fi
+          ./scripts/macos/make-dmg.sh
+
+      - name: Stage downloadable artefact (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        # Windows runners default to PowerShell; zip via Compress-Archive
+        # to keep the workflow self-contained (no apt/brew install).
+        run: |
+          Compress-Archive -Path build/bin/spotter-client.exe -DestinationPath spotter-client-${{ matrix.label }}.zip
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotter-client-${{ matrix.id }}
+          path: |
+            spotter-client-${{ matrix.label }}.tar.gz
+            spotter-client-${{ matrix.label }}.zip
+            Spotter-*-darwin-${{ matrix.id == 'darwin-amd64' && 'amd64' || 'arm64' }}.dmg
+          if-no-files-found: warn
+          retention-days: 30
