@@ -9,6 +9,7 @@ import NetworkCard from './NetworkCard';
 import JetsonCard from './JetsonCard';
 import EmptyState from './EmptyState';
 import LogSection from './LogSection';
+import PowerAuditList from './PowerAuditList';
 
 type PowerAction = 'reboot' | 'shutdown';
 
@@ -18,6 +19,11 @@ export default function DetailPanel() {
   const actions = useDeviceActions();
   const [busyAction, setBusyAction] = useState<PowerAction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped every time the operator runs a power action, so
+  // PowerAuditList refetches and shows the new entry without
+  // a manual reload. The number itself is irrelevant; only
+  // the change matters.
+  const [auditRevision, setAuditRevision] = useState(0);
   const device = state.devices.find((d) => d.device_id === state.selectedId);
   const hostname = device?.last_info?.basic?.hostname || device?.ip || '';
 
@@ -58,6 +64,7 @@ export default function DetailPanel() {
             await actions.shutdown(device.device_id);
           }
           message.success(t('detail.actions.power.toast.success') ?? 'Command sent');
+          setAuditRevision((r) => r + 1);
         } catch (e: unknown) {
           const err = e as { message?: string } | null;
           const msg = (err?.message ?? String(e)) as string;
@@ -136,6 +143,26 @@ export default function DetailPanel() {
             </div>
             <div style={{ marginTop: 12 }}>
               <NetworkCard device={device} />
+            </div>
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+              }}
+            >
+              <h3 style={{
+                margin: '0 0 8px 0',
+                fontSize: 13,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}>
+                {t('detail.audit.title') || 'Power Activity'}
+              </h3>
+              <PowerAuditList deviceID={device.device_id} revision={auditRevision} limit={10} />
             </div>
           </>
         )}
