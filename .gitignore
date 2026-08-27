@@ -30,6 +30,9 @@
 /frontend/*.tsbuildinfo
 /frontend/vite.config.d.ts
 /frontend/vite.config.js
+# tsc-on-demand output for `node --test scripts/run-tests.mjs`
+# (alerts.test infra). Regenerated on each test run; never commit.
+/frontend/.test-build/
 
 # IDE
 .vscode/
