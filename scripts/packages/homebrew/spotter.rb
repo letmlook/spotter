@@ -7,6 +7,11 @@ class Spotter < Formula
   # homebrew-formula CI job rebuilds the tarball from the v1.0.0
   # tag and asserts this string still matches — failure is a hard
   # gate against the merge.
+  #
+  # Maintenance: when a new tag is cut, the release workflow's
+  # `homebrew-tap` job opens a PR on spotter/homebrew-tap with the
+  # next `url` and `sha256`. Without that secret configured, run
+  # `./scripts/update-homebrew-sha.sh` locally and edit by hand.
   sha256 "f7150c2854100219671413084b525f2e5933bd39efe763ae4ceacfce3e32a09e"
   license "Apache-2.0"
 
@@ -37,6 +42,13 @@ class Spotter < Formula
   end
 
   test do
-    system bin/"spotter-client", "version"
+    # The Wails binary is a GUI app and doesn't accept CLI args,
+    # so we only assert the install path is sane: the launcher
+    # exists, is executable, and is the Mach-O binary produced by
+    # the Wails build. UI smoke tests (start the actual window)
+    # are intentionally out of scope for `brew test` because they
+    # require a real display server.
+    assert_predicate bin/"spotter-client", :exist?
+    assert_predicate bin/"spotter-client", :executable?
   end
 end

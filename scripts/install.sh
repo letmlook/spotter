@@ -63,6 +63,25 @@ install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 systemctl daemon-reload
 systemctl enable --now spotterd
 
+# If the host is not a systemd distro (Alpine, Void, Artix),
+# print a hint pointing at the right init script under
+# scripts/init/. The user runs that manually; install.sh does
+# not auto-install OpenRC/runit because the path layout differs
+# per distro and we'd rather not guess.
+if [ ! -d /run/systemd/system ] && [ "$(command -v openrc-run 2>/dev/null)" != "" ]; then
+  echo
+  echo "Detected OpenRC host; install with:"
+  echo "  install -m 0755 $UNIT_SRC /etc/init.d/spotterd"
+  echo "  rc-update add spotterd default"
+  echo "  rc-service spotterd start"
+elif [ ! -d /run/systemd/system ] && [ -d /etc/sv ] && [ "$(command -v sv 2>/dev/null)" != "" ]; then
+  echo
+  echo "Detected runit host (Void/Artix); install with:"
+  echo "  install -m 0755 scripts/init/runit/spotterd.run /etc/sv/spotterd/run"
+  echo "  ln -s /etc/sv/spotterd /var/service/"
+  echo "  sv start spotterd"
+fi
+
 # Allow time for service to start, then report status.
 sleep 1
 if ! systemctl is-active --quiet spotterd; then

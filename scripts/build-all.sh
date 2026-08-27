@@ -175,6 +175,14 @@ copy_scripts() {
   install -m 0644 "$PROJECT_ROOT/scripts/deploy.ps1"   "$SCRIPT_OUT/deploy.ps1"
   install -m 0644 "$PROJECT_ROOT/scripts/spotterd.service" \
                   "$SCRIPT_OUT/spotterd.service"
+  # Non-systemd init scripts for distros that don't ship it
+  # (Alpine / Void / Artix). These live in their own subdirs so
+  # an operator can grab the one matching their init system
+  # without sifting through the systemd unit.
+  install -m 0755 "$PROJECT_ROOT/scripts/init/openrc/spotterd" \
+                  "$SCRIPT_OUT/init/openrc/spotterd"
+  install -m 0755 "$PROJECT_ROOT/scripts/init/runit/spotterd.run" \
+                  "$SCRIPT_OUT/init/runit/spotterd.run"
   ok "scripts + deploy helpers"
 }
 

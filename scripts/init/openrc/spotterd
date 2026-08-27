@@ -1,6 +1,18 @@
 #!/sbin/openrc-run
 # OpenRC init script for spotterd. Drop into /etc/init.d/ and run
-# `rc-update add spotterd default`. Tested on Alpine 3.x.
+# `rc-update add spotterd default` to start on boot. Tested on
+# Alpine 3.18+. Mirrors the systemd unit at scripts/spotterd.service
+# 1:1 — same binary, same flags, same log paths.
+#
+# spotterd is a privileged control plane: it calls `systemctl
+# reboot/poweroff` on its own machine, so it MUST run as root.
+# The `command_user="root:root"` line below is intentional, not
+# a leftover.
+#
+# This script lives in scripts/init/openrc/spotterd. Install with:
+#   install -m 0755 spotterd /etc/init.d/spotterd
+#   rc-update add spotterd default
+#   rc-service spotterd start
 
 name="spotterd"
 description="Spotter LAN device-discovery daemon"
@@ -9,6 +21,12 @@ supervisor=supervise-daemon
 command="/usr/local/bin/spotterd"
 command_args="--config /etc/spotterd/agent.toml --log-level info"
 command_user="root:root"
+# Match the systemd unit's grace timeout. supervise-daemon sends
+# SIGTERM first; if the process is still alive after TERM_GRACE,
+# SIGKILL closes it. spotterd wires signal.NotifyContext to
+# SIGINT/SIGTERM (cmd/agent/main.go:runAgent), so the process
+# drains HTTP and exits cleanly inside this window.
+TERM_GRACE=5
 
 pidfile="/run/${name}.pid"
 output_log="/var/log/${name}.log"
@@ -24,4 +42,20 @@ start_pre() {
     eerror "/etc/spotterd/agent.toml missing — run scripts/install.sh first"
     return 1
   fi
+  # spotterd must be able to read /etc/spotterd (mode 0600, root-only).
+  # install.sh sets this, but a tarball restore or a non-root `cp -r`
+  # can break it silently. Re-assert here so a bad config doesn't
+  # crash the daemon 200ms after start with a confusing log line.
+  if [ "$(stat -c %a /etc/spotterd/agent.toml 2>/dev/null)" != "600" ]; then
+    ewarn "agent.toml is not 0600; tightening (auth_token may be readable by non-root)"
+    chmod 0600 /etc/spotterd/agent.toml
+  fi
+}
+
+stop_pre() {
+  # supervise-daemon sends SIGTERM by default; spotterd's signal
+  # handler triggers HTTP drain inside Agent.Close() (5s grace).
+  # Nothing to do here, but the hook is documented so operators
+  # know where to add custom pre-stop logic.
+  return 0
 }

@@ -1,13 +1,41 @@
 #!/bin/sh
 # runit run script for spotterd. Drop into /var/service/spotterd/run
 # (or /etc/runit/spotterd/run + symlink). Tested on Void Linux.
+#
+# Mirrors scripts/spotterd.service (systemd) and
+# scripts/init/openrc/spotterd (OpenRC) 1:1. The three are
+# interchangeable — pick whatever init your distro ships.
+#
+# The runit supervision tree expects a `run` script that NEVER
+# returns. spotterd is a long-lived daemon, so we exec into it
+# directly; runit restarts us on exit.
+#
+# Install on Void (runit is PID 1):
+#   install -m 0755 spotterd.run /etc/sv/spotterd/run
+#   ln -s /etc/sv/spotterd /var/service/
+#   sv start spotterd
+#
+# On Artix (runit alongside OpenRC):
+#   install -m 0755 spotterd.run /etc/runit/sv/spotterd/run
+#   ln -s /etc/runit/sv/spotterd /run/runit/service/
+
+set -eu
 
 exec 2>&1
 
-if [ -f /etc/spotterd/agent.toml ]; then
-  exec /usr/local/bin/spotterd --config /etc/spotterd/agent.toml --log-level info
-else
-  echo "spotterd: /etc/spotterd/agent.toml missing — run scripts/install.sh first" >&2
+CONFIG="/etc/spotterd/agent.toml"
+BINARY="/usr/local/bin/spotterd"
+
+if [ ! -f "$CONFIG" ]; then
+  # Don't bail: surface the error to runit's logger and let the
+  # operator install it. runit will restart us on exit, so a
+  # human-readable log line is more useful than a tight loop.
+  echo "spotterd: $CONFIG missing — run scripts/install.sh first" >&2
   sleep 5
-  exec /usr/local/bin/spotterd --config /etc/spotterd/agent.toml --log-level info
 fi
+
+# spotterd is a privileged control plane (calls systemctl on its
+# own host). It must run as root. runit runs run scripts as the
+# service owner; we rely on the install path (`chown root:root`)
+# to set this up correctly.
+exec "$BINARY" --config "$CONFIG" --log-level info
