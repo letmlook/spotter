@@ -245,3 +245,120 @@ jobs:
           path: bin/spotterd
           if-no-files-found: error
           retention-days: 7
+
+  # Coverage gate: runs `make coverage`, parses the total line
+  # (the `go tool cover -func` tail summary emits something like
+  # `total:	(statements)	XX.X%`), and fails the job if the
+  # number is below the threshold. The bar is set to 55% as a
+  # baseline — internal/ packages (88% clientconfig, 100%
+  # timefmt, 86% jsonstore, 82% registry, 76% serverd) are
+  # comfortably above; the root package drags the total down
+  # because main.go's Wails binding glue is exercised by the
+  # GUI smoke test, not the Go suite. Bump the threshold on
+  # every PR that lifts the floor.
+  coverage:
+    name: coverage (≥55%)
+    needs: frontend-dist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Restore frontend/dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Refresh go.sum
+        run: go mod tidy
+
+      - name: Run coverage
+        # NOTE: deliberately *not* `make coverage` — that target ends
+        # with `rm -f coverage.out` (see Makefile), which would delete
+        # the profile before the threshold step parses it and before
+        # the artifact upload collects it. Keep these flags in sync
+        # with the Makefile target by hand.
+        #
+        # pipefail matters: without it a `go tool cover` failure is
+        # swallowed by `tail`'s exit 0 and resurfaces one step later
+        # as a confusing empty-PCT error.
+        run: |
+          set -eo pipefail
+          go test ./... -race -count=1 \
+            -coverprofile=coverage.out -covermode=atomic > coverage.log 2>&1 || {
+            cat coverage.log
+            exit 1
+          }
+          go tool cover -func=coverage.out | tee coverage-summary.txt | tail -1
+
+      - name: Enforce coverage threshold
+        # The `go tool cover -func` tail-line is:
+        #   total:	(statements)	XX.XX%
+        # We extract the float and compare. THRESHOLD is the single
+        # source of truth — the job `name:` above carries a copy for
+        # the Actions UI, so bump both together.
+        env:
+          THRESHOLD: "55"
+        run: |
+          set -eo pipefail
+          # `|| true` so a missing total line falls through to the
+          # explicit check below instead of dying under `set -e`
+          # with no diagnostic.
+          PCT=$(grep -E '^total:' coverage-summary.txt | awk '{print $NF}' | tr -d '%' || true)
+          if [ -z "$PCT" ]; then
+            echo "::error::could not parse a total from coverage-summary.txt"
+            cat coverage-summary.txt
+            exit 1
+          fi
+          echo "total coverage: ${PCT}%"
+          if awk -v p="$PCT" -v t="$THRESHOLD" 'BEGIN { exit !(p+0 >= t+0) }'; then
+            echo "✅ coverage ${PCT}% >= ${THRESHOLD}% threshold"
+          else
+            echo "::error::coverage ${PCT}% < ${THRESHOLD}% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage report
+        # Even on failure, attach coverage.txt + coverage.log so
+        # the reviewer can see which packages are pulling the
+        # number down. retention=14d gives a buffer for post-
+        # mortem without keeping the artifact store cluttered.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage-summary.txt
+            coverage.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # spec-check enforces the SPEC ↔ code invariant defined in
+  # docs/superpowers/SPEC_REVIEW.md and
+  # docs/superpowers/SPEC_DEVIATIONS.md. The script
+  # (scripts/spec-check.sh) walks each declared default in the
+  # spec files, looks for the corresponding code line, and
+  # fails if the value drifted without a deviation entry.
+  spec-check:
+    name: spec-check (SPEC_REVIEW invariant)
+    needs: frontend-dist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # Default shallow depth is fine: scripts/spec-check.sh is pure
+        # grep over internal/ cmd/ main.go docs/ and never invokes git.
+        uses: actions/checkout@v4
+
+      - name: Run spec-check
+        # `make spec-check` is a pure shell script; no Go toolchain
+        # needed. We fail fast (no continue-on-error) so a
+        # SPEC↔code drift can't merge unnoticed.
+        run: make spec-check
